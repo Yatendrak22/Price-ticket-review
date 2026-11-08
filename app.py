@@ -59,7 +59,6 @@ def parse_master_data(excel_path, word_path=None):
 def index():
     return render_template('index.html')
 
-@app.route('/api/process', mode='methods', methods=['POST'])
 @app.route('/api/process', methods=['POST'])
 def process_ticket():
     if 'pdf' not in request.files or 'excel' not in request.files:
