@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Price Ticket Pre-Flight & Compliance Engine</title>
+    <style>
+        :root {
+            --bg: #F5F5F7;
+            --card-bg: rgba(255, 255, 255, 0.85);
+            --border: #E5E5EA;
+            --text-primary: #1D1D1F;
+            --text-secondary: #86868B;
+            --accent: #0071E3;
+            --accent-hover: #0077ED;
+            --success: #34C759;
+            --error: #FF3B30;
+            --warning: #FF9500;
+            --radius: 16px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #000000;
+                --card-bg: rgba(28, 28, 30, 0.85);
+                --border: #38383A;
+                --text-primary: #F5F5F7;
+                --text-secondary: #A1A1A6;
+                --accent: #2997FF;
+                --accent-hover: #409CFF;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-primary);
+            padding: 40px 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 980px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        header h1 {
+            font-size: 34px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            font-size: 17px;
+            color: var(--text-secondary);
+        }
+
+        /* Upload Section */
+        .upload-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+
+        .dropzone {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 30px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            position: relative;
+        }
+
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--accent);
+            background: rgba(0, 113, 227, 0.04);
+            transform: translateY(-2px);
+        }
+
+        .dropzone input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .dropzone-icon {
+            font-size: 36px;
+            margin-bottom: 12px;
+        }
+
+        .dropzone-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .dropzone-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .file-selected {
+            font-size: 13px;
+            color: var(--accent);
+            font-weight: 500;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+
+        /* Action Button */
+        .actions {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .btn-primary {
+            background-color: var(--accent);
+            color: white;
+            font-size: 16px;
+            font-weight: 500;
+            padding: 14px 32px;
+            border-radius: 980px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 4px 14px rgba(0, 113, 227, 0.3);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* Results Card */
+        .results-container {
+            display: none;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .scorecard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .stat-val {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-status {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .badge-fail {
+            background: rgba(255, 59, 48, 0.15);
+            color: var(--error);
+        }
+
+        .badge-pass {
+            background: rgba(52, 199, 89, 0.15);
+            color: var(--success);
+        }
+
+        /* Downloads Banner */
+        .downloads-banner {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 20px;
+            background: var(--bg);
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--card-bg);
+            color: var(--text-primary);
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            transition: all 0.2s ease;
+        }
+
+        .btn-download:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .btn-download.featured {
+            background: var(--accent);
+            color: white;
+            border: none;
+        }
+
+        .btn-download.featured:hover {
+            background: var(--accent-hover);
+            color: white;
+        }
+
+        /* Findings Table */
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        th {
+            padding: 12px 16px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .pill-fail {
+            background: rgba(255, 59, 48, 0.12);
+            color: var(--error);
+        }
+
+        .pill-pass {
+            background: rgba(52, 199, 89, 0.12);
+            color: var(--success);
+        }
+
+        .strike {
+            text-decoration: line-through;
+            color: var(--error);
+            font-weight: 600;
+        }
+
+        .corrected-val {
+            color: var(--success);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Retail Price Ticket Checker & Fixer</h1>
+        <p>Cross-check agency PDFs against Master Excel pricing and Legal Word documentation.</p>
+    </header>
+
+    <div class="upload-grid">
+        <!-- 1. Excel Master Sheet -->
+        <div class="dropzone" id="dz-excel">
+            <input type="file" id="file-excel" accept=".xlsx,.xls">
+            <div class="dropzone-icon">📊</div>
+            <div class="dropzone-title">Master Pricing (Excel)</div>
+            <div class="dropzone-desc">Upload Header.xlsx with MPN & MRP</div>
+            <div class="file-selected" id="name-excel"></div>
+        </div>
+
+        <!-- 2. Word Master T&Cs -->
+        <div class="dropzone" id="dz-word">
+            <input type="file" id="file-word" accept=".docx,.doc">
+            <div class="dropzone-icon">📝</div>
+            <div class="dropzone-title">Master T&Cs (Word)</div>
+            <div class="dropzone-desc">Optional legal clauses & footnotes</div>
+            <div class="file-selected" id="name-word"></div>
+        </div>
+
+        <!-- 3. Agency PDF -->
+        <div class="dropzone" id="dz-pdf">
+            <input type="file" id="file-pdf" accept=".pdf">
+            <div class="dropzone-icon">📄</div>
+            <div class="dropzone-title">Agency PDF Ticket</div>
+            <div class="dropzone-desc">The approved layout PDF to audit</div>
+            <div class="file-selected" id="name-pdf"></div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <button class="btn-primary" id="btn-run" onclick="runAudit()" disabled>
+            Run Audit & Generate Corrected Files
+        </button>
+    </div>
+
+    <!-- Results Container -->
+    <div class="results-container" id="results-panel">
+        <div class="scorecard">
+            <div class="stat-card">
+                <div class="stat-val" id="stat-status">-</div>
+                <div class="stat-label">Verdict</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-val" id="stat-errors" style="color: var(--error)">0</div>
+                <div class="stat-label">Discrepancies</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-val" id="stat-passed" style="color: var(--success)">0</div>
+                <div class="stat-label">Compliant Items</div>
+            </div>
+        </div>
+
+        <!-- Action Downloads -->
+        <div class="downloads-banner">
+            <a href="#" class="btn-download featured" id="dl-corrected">
+                ⬇️ Download Corrected PDF (Ready for Print)
+            </a>
+            <a href="#" class="btn-download" id="dl-redlined">
+                🔍 Download Redlined PDF (Feedback Markup)
+            </a>
+        </div>
+
+        <!-- Discrepancy Findings Table -->
+        <h3 style="font-size: 18px; margin-bottom: 16px;">Audit Findings & Auto-Corrections</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Issue / Inspection</th>
+                        <th>Detected in PDF</th>
+                        <th>Master / Expected Value</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="findings-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const fileExcel = document.getElementById('file-excel');
+    const fileWord = document.getElementById('file-word');
+    const filePdf = document.getElementById('file-pdf');
+    const btnRun = document.getElementById('btn-run');
+
+    function checkReady() {
+        btnRun.disabled = !(fileExcel.files.length > 0 && filePdf.files.length > 0);
+    }
+
+    fileExcel.addEventListener('change', (e) => {
+        document.getElementById('name-excel').textContent = e.target.files[0]?.name || '';
+        checkReady();
+    });
+
+    fileWord.addEventListener('change', (e) => {
+        document.getElementById('name-word').textContent = e.target.files[0]?.name || '';
+        checkReady();
+    });
+
+    filePdf.addEventListener('change', (e) => {
+        document.getElementById('name-pdf').textContent = e.target.files[0]?.name || '';
+        checkReady();
+    });
+
+    async function runAudit() {
+        btnRun.disabled = true;
+        btnRun.textContent = "Analyzing & Correcting Layout...";
+
+        const formData = new FormData();
+        formData.append('excel', fileExcel.files[0]);
+        formData.append('pdf', filePdf.files[0]);
+        if (fileWord.files.length > 0) {
+            formData.append('word', fileWord.files[0]);
+        }
+
+        try {
+            const resp = await fetch('/api/process', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await resp.json();
+            if (!data.success) {
+                alert("Error processing files: " + (data.error || "Unknown error"));
+                return;
+            }
+
+            // Display Results
+            document.getElementById('results-panel').style.display = 'block';
+            document.getElementById('stat-errors').textContent = data.summary.failed;
+            document.getElementById('stat-passed').textContent = data.summary.passed;
+            
+            const statusEl = document.getElementById('stat-status');
+            if (data.summary.failed > 0) {
+                statusEl.innerHTML = `<span class="badge-status badge-fail">REJECTED</span>`;
+            } else {
+                statusEl.innerHTML = `<span class="badge-status badge-pass">APPROVED</span>`;
+            }
+
+            // Hook download buttons
+            document.getElementById('dl-redlined').href = data.downloads.redlined;
+            document.getElementById('dl-corrected').href = data.downloads.corrected;
+
+            // Render Table
+            const tbody = document.getElementById('findings-table-body');
+            tbody.innerHTML = '';
+            data.findings.forEach(f => {
+                const tr = document.createElement('tr');
+                const isFail = f.status === 'fail';
+                tr.innerHTML = `
+                    <td><strong>${f.category}</strong></td>
+                    <td>${f.type}</td>
+                    <td><span class="${isFail ? 'strike' : ''}">${f.found}</span></td>
+                    <td><span class="corrected-val">${f.expected}</span></td>
+                    <td><span class="pill ${isFail ? 'pill-fail' : 'pill-pass'}">${isFail ? 'ERROR' : 'PASS'}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Smooth scroll to results
+            document.getElementById('results-panel').scrollIntoView({ behavior: 'smooth' });
+
+        } catch (err) {
+            alert("Network or server error occurred: " + err.message);
+        } finally {
+            btnRun.disabled = false;
+            btnRun.textContent = "Run Audit & Generate Corrected Files";
+        }
+    }
+</script>
+
+</body>
+</html>

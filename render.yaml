@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: price-ticket-checker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 120
+    plan: free
