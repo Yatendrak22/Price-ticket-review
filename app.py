@@ -117,7 +117,11 @@ def process_ticket():
         excel_file = request.files.get('excel')
         word_file = request.files.get('word')
 
-        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{session_id}_{pdf_file.filename}")
+        # Ensure saved file always has .pdf extension so PyMuPDF detects it properly
+        pdf_filename = pdf_file.filename or "ticket.pdf"
+        if not pdf_filename.lower().endswith('.pdf'):
+            pdf_filename += '.pdf'
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{session_id}_{pdf_filename}")
         pdf_file.save(pdf_path)
 
         excel_path = None
@@ -132,6 +136,7 @@ def process_ticket():
 
         price_db, terms_clauses = parse_master_data(excel_path, word_path)
 
+        # Baseline MRPs
         default_mrps = [
             "₹34,900.00", "₹49,900.00", "₹44,900.00", "₹59,900.00", "₹64,900.00", "₹79,900.00",
             "₹7,900.00", "₹9,500.00", "₹24,900.00", "₹8,500.00",
@@ -144,7 +149,17 @@ def process_ticket():
         redlined_filename = f"REDLINED_{session_id}.pdf"
         redlined_path = os.path.join(app.config['OUTPUT_FOLDER'], redlined_filename)
         
-        doc = fitz.open(pdf_path)
+        try:
+            doc = fitz.open(pdf_path, filetype="pdf")
+        except Exception:
+            doc = fitz.open(pdf_path)
+
+        if len(doc) == 0:
+            return jsonify({
+                "success": False,
+                "error": "The uploaded file has 0 pages. Please verify you selected a valid PDF document."
+            }), 200
+
         page = doc[0]
         audit_findings = []
 
@@ -221,7 +236,10 @@ def process_ticket():
         corrected_filename = f"CORRECTED_{session_id}.pdf"
         corrected_path = os.path.join(app.config['OUTPUT_FOLDER'], corrected_filename)
         
-        doc_fix = fitz.open(pdf_path)
+        try:
+            doc_fix = fitz.open(pdf_path, filetype="pdf")
+        except Exception:
+            doc_fix = fitz.open(pdf_path)
         page_fix = doc_fix[0]
 
         promo_matches_fix = page_fix.search_for("Add Affordability Messaging Here")
