@@ -27,42 +27,63 @@ def clean_price(val):
         return str(val).strip()
 
 def parse_master_data(excel_path, word_path=None):
+    def parse_master_data(excel_path, word_path=None):
     price_db = []
-    wb = openpyxl.load_workbook(excel_path, data_only=True)
-    ws = wb.active
-    
-    # Flexible, case-insensitive header mapping
-    headers = {normalize(str(cell.value)).lower(): idx for idx, cell in enumerate(ws[1]) if cell.value}
-    
-    def find_idx(keywords):
-        for h, idx in headers.items():
-            for kw in keywords:
-                if kw in h:
-                    return idx
-        return None
+    try:
+        wb = openpyxl.load_workbook(excel_path, data_only=True)
+        ws = wb.active
+        headers = {normalize(str(cell.value)).lower(): idx for idx, cell in enumerate(ws[1]) if cell.value}
+        
+        def find_idx(keywords):
+            for h, idx in headers.items():
+                for kw in keywords:
+                    if kw in h:
+                        return idx
+            return None
 
-    mpn_idx = find_idx(["mpn", "part number", "sku"])
-    details_idx = find_idx(["product details", "product", "details", "description"])
-    mrp_idx = find_idx(["mrp", "price", "regular price"])
-    eff_idx = find_idx(["effective price", "cashback effective"])
-    loan_idx = find_idx(["loans", "emi", "price ticket - loans"])
-    scheme_idx = find_idx(["schemes", "scheme"])
+        mpn_idx = find_idx(["mpn", "part number", "sku"])
+        details_idx = find_idx(["product details", "product", "details", "description"])
+        mrp_idx = find_idx(["mrp", "price", "regular price"])
+        eff_idx = find_idx(["effective price", "cashback effective"])
+        loan_idx = find_idx(["loans", "emi", "price ticket - loans"])
+        scheme_idx = find_idx(["schemes", "scheme"])
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not any(row):
-            continue
-        def get_val(idx):
-            return row[idx] if idx is not None and idx < len(row) else None
-            
-        mrp_val = clean_price(get_val(mrp_idx))
-        if mrp_val:
-            price_db.append({
-                "mpn": str(get_val(mpn_idx) or "").strip(),
-                "details": normalize(str(get_val(details_idx) or "")),
-                "mrp": mrp_val,
-                "effective_price": clean_price(get_val(eff_idx)),
-                "loans": clean_price(get_val(loan_idx)),
-                "schemes": str(get_val(scheme_idx) or "").strip()
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            def get_val(idx):
+                return row[idx] if idx is not None and idx < len(row) else None
+                
+            mrp_val = clean_price(get_val(mrp_idx))
+            if mrp_val:
+                price_db.append({
+                    "mpn": str(get_val(mpn_idx) or "").strip(),
+                    "details": normalize(str(get_val(details_idx) or "")),
+                    "mrp": mrp_val,
+                    "effective_price": clean_price(get_val(eff_idx)),
+                    "loans": clean_price(get_val(loan_idx)),
+                    "schemes": str(get_val(scheme_idx) or "").strip()
+                })
+    except Exception as e:
+        print("Excel parsing notice:", e)
+
+    # SAFE WORD EXTRACTION (Never crashes if not a valid .docx)
+    terms_clauses = []
+    if word_path and os.path.exists(word_path):
+        try:
+            doc = docx.Document(word_path)
+            terms_clauses = [normalize(p.text) for p in doc.paragraphs if normalize(p.text)]
+        except Exception as e:
+            print("Word parsing notice (skipped):", e)
+            # Fallback: extract plain text strings if it's text/rtf
+            try:
+                with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    raw = f.read()
+                    terms_clauses = [normalize(line) for line in raw.split('\n') if len(normalize(line)) > 20]
+            except Exception:
+                pass
+        
+    return price_db, terms_clauses
             })
         
     terms_clauses = []
