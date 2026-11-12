@@ -404,8 +404,26 @@ def process_ticket():
         approved_files = sum(1 for r in results if r.get('status') == 'APPROVED')
         rejected_files = total_files - approved_files
 
+        first_res = results[0] if results else {}
+        total_failed = sum(r.get("failed", 0) for r in results)
+        total_passed = sum(r.get("passed", 0) for r in results)
+        all_findings = []
+        for r in results:
+            all_findings.extend(r.get("findings", []))
+
         return jsonify({
             "success": True,
+            "summary": {
+                "total_checks": total_failed + total_passed,
+                "passed": total_passed,
+                "failed": total_failed,
+                "status": "REJECTED" if total_failed > 0 else "APPROVED"
+            },
+            "findings": all_findings,
+            "downloads": first_res.get("downloads", {
+                "redlined": f"/download/{zip_filename}",
+                "corrected": f"/download/{zip_filename}"
+            }),
             "batch_summary": {
                 "total_files": total_files,
                 "approved_files": approved_files,
