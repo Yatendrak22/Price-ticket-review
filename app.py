@@ -574,6 +574,82 @@ def download_file(filename):
         return send_file(file_path, as_attachment=True)
     return "File not found", 404
 
+@app.route('/openapi.json')
+def serve_openapi_json():
+    spec = {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Promotional Artwork Pre-Flight Verification & Remediation Engine",
+            "version": "2.1.0",
+            "description": "Enterprise pre-flight compliance API for deterministic auditing of agency-generated promotional PDF layouts."
+        },
+        "paths": {
+            "/api/process": {
+                "post": {
+                    "summary": "Run pre-flight audit & auto-correction",
+                    "description": "Uploads agency PDF(s) alongside Master Excel and Approved Format documents to execute compliance inspection.",
+                    "requestBody": {
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["pdf"],
+                                    "properties": {
+                                        "pdf": {"type": "array", "items": {"type": "string", "format": "binary"}},
+                                        "excel": {"type": "array", "items": {"type": "string", "format": "binary"}},
+                                        "word": {"type": "array", "items": {"type": "string", "format": "binary"}}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Audit findings and download links for redlined and corrected PDFs."
+                        }
+                    }
+                }
+            },
+            "/download/{filename}": {
+                "get": {
+                    "summary": "Download generated PDF artifact or ZIP package",
+                    "parameters": [
+                        {"name": "filename", "in": "path", "required": True, "schema": {"type": "string"}}
+                    ],
+                    "responses": {
+                        "200": {"description": "Binary PDF or ZIP file."}
+                    }
+                }
+            }
+        }
+    }
+    return jsonify(spec)
+
+@app.route('/docs')
+def serve_swagger_ui():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>API Documentation - Swagger UI</title>
+        <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    </head>
+    <body style="margin:0;">
+        <div id="swagger-ui"></div>
+        <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+        <script>
+            window.onload = () => {
+                window.ui = SwaggerUIBundle({
+                    url: '/openapi.json',
+                    dom_id: '#swagger-ui',
+                });
+            };
+        </script>
+    </body>
+    </html>
+    """
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
     print(f"Starting Price Ticket Verification Engine on port {port}")
