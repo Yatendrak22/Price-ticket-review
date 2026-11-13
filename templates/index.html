@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Price Ticket Pre-Flight & Compliance Engine</title>
+    <title>Price Ticket Batch Pre-Flight & Compliance Engine</title>
     <style>
         :root {
             --bg: #F5F5F7;
@@ -51,7 +51,7 @@
 
         .container {
             width: 100%;
-            max-width: 980px;
+            max-width: 1050px;
         }
 
         header {
@@ -71,10 +71,9 @@
             color: var(--text-secondary);
         }
 
-        /* Upload Section */
         .upload-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
             margin-bottom: 28px;
         }
@@ -84,7 +83,7 @@
             backdrop-filter: blur(20px);
             border: 2px dashed var(--border);
             border-radius: var(--radius);
-            padding: 30px 20px;
+            padding: 26px 20px;
             text-align: center;
             cursor: pointer;
             transition: all 0.25s ease;
@@ -105,11 +104,12 @@
             height: 100%;
             opacity: 0;
             cursor: pointer;
+            z-index: 5;
         }
 
         .dropzone-icon {
             font-size: 36px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .dropzone-title {
@@ -123,60 +123,77 @@
             color: var(--text-secondary);
         }
 
+        .toggle-folder-btn {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--accent);
+            text-decoration: underline;
+            cursor: pointer;
+            z-index: 10;
+            position: relative;
+        }
+
         .file-selected {
             font-size: 13px;
             color: var(--accent);
-            font-weight: 500;
+            font-weight: 600;
             margin-top: 10px;
             word-break: break-all;
+            background: rgba(0, 113, 227, 0.08);
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: inline-block;
+            position: relative;
+            z-index: 6;
         }
 
-        /* Action Button */
         .actions {
             text-align: center;
             margin-bottom: 40px;
         }
 
-        terms_clauses = []
-    for word_path in word_files:
-        if not word_path or not os.path.exists(word_path) or os.path.getsize(word_path) == 0:
-            continue
-        
-        # 1. If it's a PDF file (Approved Format PDF template)
-        try:
-            pdoc = fitz.open(word_path, filetype="pdf")
-            for page in pdoc:
-                for line in page.get_text("text").split('\n'):
-                    txt = normalize(line)
-                    if txt and len(txt) > 20:
-                        terms_clauses.append(txt)
-            pdoc.close()
-            if terms_clauses:
-                continue
-        except Exception:
-            pass
+        .btn-primary {
+            background-color: var(--accent);
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 14px 36px;
+            border-radius: 980px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 4px 14px rgba(0, 113, 227, 0.3);
+        }
 
-        # 2. If it's a Word document (.docx)
-        try:
-            doc = docx.Document(word_path)
-            for p in doc.paragraphs:
-                txt = normalize(p.text)
-                if txt and len(txt) > 20:
-                    terms_clauses.append(txt)
-            if terms_clauses:
-                continue
-        except Exception:
-            pass
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
 
-        # 3. Plain text / fallback
-        try:
-            with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f.read().split('\n'):
-                    txt = normalize(line)
-                    if len(txt) > 20:
-                        terms_clauses.append(txt)
-        except Exception:
-            pass
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .results-container {
+            display: none;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .scorecard {
@@ -209,10 +226,10 @@
 
         .badge-status {
             display: inline-block;
-            padding: 6px 14px;
+            padding: 4px 12px;
             border-radius: 20px;
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .badge-fail {
@@ -225,12 +242,11 @@
             color: var(--success);
         }
 
-        /* Downloads Banner */
         .downloads-banner {
             display: flex;
             gap: 16px;
             justify-content: center;
-            flex-wrap: wrap;
+            align-items: center;
             padding: 20px;
             background: var(--bg);
             border-radius: 12px;
@@ -242,37 +258,24 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            background: var(--card-bg);
-            color: var(--text-primary);
+            background: var(--accent);
+            color: white;
             text-decoration: none;
-            padding: 12px 24px;
+            padding: 12px 26px;
             border-radius: 10px;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 600;
-            border: 1px solid var(--border);
             transition: all 0.2s ease;
         }
 
         .btn-download:hover {
-            border-color: var(--accent);
-            color: var(--accent);
+            background: var(--accent-hover);
             transform: translateY(-1px);
         }
 
-        .btn-download.featured {
-            background: var(--accent);
-            color: white;
-            border: none;
-        }
-
-        .btn-download.featured:hover {
-            background: var(--accent-hover);
-            color: white;
-        }
-
-        /* Findings Table */
         .table-wrapper {
             overflow-x: auto;
+            margin-top: 15px;
         }
 
         table {
@@ -298,33 +301,32 @@
             vertical-align: middle;
         }
 
-        .pill {
+        .btn-action-small {
             display: inline-block;
-            padding: 4px 8px;
+            padding: 6px 12px;
             border-radius: 6px;
+            text-decoration: none;
             font-size: 12px;
             font-weight: 600;
+            margin-right: 6px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text-primary);
         }
 
-        .pill-fail {
-            background: rgba(255, 59, 48, 0.12);
-            color: var(--error);
+        .btn-action-small:hover {
+            border-color: var(--accent);
+            color: var(--accent);
         }
 
-        .pill-pass {
-            background: rgba(52, 199, 89, 0.12);
-            color: var(--success);
+        .btn-action-small.feat {
+            background: var(--accent);
+            color: white;
+            border: none;
         }
 
-        .strike {
-            text-decoration: line-through;
-            color: var(--error);
-            font-weight: 600;
-        }
-
-        .corrected-val {
-            color: var(--success);
-            font-weight: 600;
+        .btn-action-small.feat:hover {
+            background: var(--accent-hover);
         }
     </style>
 </head>
@@ -332,86 +334,81 @@
 
 <div class="container">
     <header>
-        <h1>Retail Price Ticket Checker & Fixer</h1>
-        <p>Cross-check agency PDFs against Master Excel pricing and Legal Word documentation.</p>
+        <h1>Retail Price Ticket Batch Checker</h1>
+        <p>Audit and auto-correct individual PDFs or entire folders at once.</p>
     </header>
 
     <div class="upload-grid">
-        <!-- 1. Excel Master Sheet -->
+        <!-- 1. Master Pricing (Excel) -->
         <div class="dropzone" id="dz-excel">
-            <input type="file" id="file-excel" accept=".xlsx,.xls">
+            <input type="file" id="file-excel" accept=".xlsx,.xls,.csv,*" multiple>
             <div class="dropzone-icon">📊</div>
-            <div class="dropzone-title">Master Pricing (Excel)</div>
-            <div class="dropzone-desc">Upload Header.xlsx with MPN & MRP</div>
-            <div class="file-selected" id="name-excel"></div>
+            <div class="dropzone-title">Master Pricing (Excel / CSV)</div>
+            <div class="dropzone-desc">Drag sheets or click to browse</div>
+            <div class="file-selected" id="name-excel" style="display:none;"></div>
         </div>
 
-                <!-- 2. Approved Format (Word / Text) -->
+        <!-- 2. Approved Format (Word / PDF / Folder) -->
         <div class="dropzone" id="dz-word">
-            <input type="file" id="file-word" accept=".docx,.doc,.txt" multiple>
+            <input type="file" id="file-word" accept=".docx,.doc,.pdf,.txt,.rtf,*" multiple>
             <div class="dropzone-icon">📝</div>
-            <div class="dropzone-title">Approved Format</div>
-            <div class="dropzone-desc">Approved layout format & legal clauses</div>
+            <div class="dropzone-title" id="word-dz-title">Approved Format</div>
+            <div class="dropzone-desc" id="word-dz-desc">Drop format files (Word, PDF, or folder)</div>
+            <span class="toggle-folder-btn" onclick="toggleWordFolderMode(event)" id="word-folder-toggle">Switch to Entire Folder Upload</span>
             <div class="file-selected" id="name-word" style="display:none;"></div>
         </div>
 
-        <!-- 3. Agency PDF -->
+        <!-- 3. Agency PDF Tickets (Files OR Folder) -->
         <div class="dropzone" id="dz-pdf">
-            <input type="file" id="file-pdf" accept=".pdf">
-            <div class="dropzone-icon">📄</div>
-            <div class="dropzone-title">Agency PDF Ticket</div>
-            <div class="dropzone-desc">The approved layout PDF to audit</div>
-            <div class="file-selected" id="name-pdf"></div>
+            <input type="file" id="file-pdf" accept=".pdf,*" multiple>
+            <div class="dropzone-icon">📁</div>
+            <div class="dropzone-title" id="pdf-dz-title">Agency PDFs (Files or Folder)</div>
+            <div class="dropzone-desc" id="pdf-dz-desc">Drop agency PDFs or folders here</div>
+            <span class="toggle-folder-btn" onclick="toggleFolderMode(event)" id="folder-toggle">Switch to Entire Folder Upload</span>
+            <div class="file-selected" id="name-pdf" style="display:none;"></div>
         </div>
     </div>
 
     <div class="actions">
-        <button class="btn-primary" id="btn-run" onclick="runAudit()" disabled>
-            Run Audit & Generate Corrected Files
+        <button class="btn-primary" id="btn-run" onclick="runBatchAudit()" disabled>
+            Run Batch Audit & Generate Outputs
         </button>
     </div>
 
-    <!-- Results Container -->
     <div class="results-container" id="results-panel">
         <div class="scorecard">
             <div class="stat-card">
-                <div class="stat-val" id="stat-status">-</div>
-                <div class="stat-label">Verdict</div>
+                <div class="stat-val" id="stat-total">0</div>
+                <div class="stat-label">PDFs Processed</div>
             </div>
             <div class="stat-card">
-                <div class="stat-val" id="stat-errors" style="color: var(--error)">0</div>
-                <div class="stat-label">Discrepancies</div>
+                <div class="stat-val" id="stat-rejected" style="color: var(--error)">0</div>
+                <div class="stat-label">Needs Revision</div>
             </div>
             <div class="stat-card">
-                <div class="stat-val" id="stat-passed" style="color: var(--success)">0</div>
-                <div class="stat-label">Compliant Items</div>
+                <div class="stat-val" id="stat-approved" style="color: var(--success)">0</div>
+                <div class="stat-label">Passed Compliance</div>
             </div>
         </div>
 
-        <!-- Action Downloads -->
         <div class="downloads-banner">
-            <a href="#" class="btn-download featured" id="dl-corrected">
-                ⬇️ Download Corrected PDF (Ready for Print)
-            </a>
-            <a href="#" class="btn-download" id="dl-redlined">
-                🔍 Download Redlined PDF (Feedback Markup)
+            <a href="#" class="btn-download" id="dl-zip">
+                📦 Download All as ZIP (Redlined + Corrected PDFs)
             </a>
         </div>
 
-        <!-- Discrepancy Findings Table -->
-        <h3 style="font-size: 18px; margin-bottom: 16px;">Audit Findings & Auto-Corrections</h3>
+        <h3 style="font-size: 18px; margin-bottom: 12px;">Processed Files & Action Items</h3>
         <div class="table-wrapper">
             <table>
                 <thead>
                     <tr>
-                        <th>Category</th>
-                        <th>Issue / Inspection</th>
-                        <th>Detected in PDF</th>
-                        <th>Master / Expected Value</th>
+                        <th>File Name</th>
                         <th>Status</th>
+                        <th>Discrepancies</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody id="findings-table-body"></tbody>
+                <tbody id="files-table-body"></tbody>
             </table>
         </div>
     </div>
@@ -423,34 +420,186 @@
     const filePdf = document.getElementById('file-pdf');
     const btnRun = document.getElementById('btn-run');
 
+    let isPdfFolderMode = false;
+    let isWordFolderMode = false;
+
+    let excelFilesList = [];
+    let wordFilesList = [];
+    let pdfFilesList = [];
+
     function checkReady() {
-        btnRun.disabled = !(fileExcel.files.length > 0 && filePdf.files.length > 0);
+        btnRun.disabled = !(pdfFilesList.length > 0 || (filePdf.files && filePdf.files.length > 0));
     }
 
+    function toggleFolderMode(e) {
+        e.stopPropagation();
+        isPdfFolderMode = !isPdfFolderMode;
+        if (isPdfFolderMode) {
+            filePdf.setAttribute('webkitdirectory', '');
+            filePdf.setAttribute('directory', '');
+            document.getElementById('pdf-dz-title').textContent = "Agency Folder Upload";
+            document.getElementById('pdf-dz-desc').textContent = "Select a folder containing PDFs";
+            document.getElementById('folder-toggle').textContent = "Switch back to Individual Files";
+        } else {
+            filePdf.removeAttribute('webkitdirectory');
+            filePdf.removeAttribute('directory');
+            document.getElementById('pdf-dz-title').textContent = "Agency PDFs (Files or Folder)";
+            document.getElementById('pdf-dz-desc').textContent = "Drop agency PDFs or folders here";
+            document.getElementById('folder-toggle').textContent = "Switch to Entire Folder Upload";
+        }
+        filePdf.value = '';
+        pdfFilesList = [];
+        document.getElementById('name-pdf').style.display = 'none';
+        checkReady();
+    }
+
+    function toggleWordFolderMode(e) {
+        e.stopPropagation();
+        isWordFolderMode = !isWordFolderMode;
+        if (isWordFolderMode) {
+            fileWord.setAttribute('webkitdirectory', '');
+            fileWord.setAttribute('directory', '');
+            document.getElementById('word-dz-title').textContent = "Approved Format Folder";
+            document.getElementById('word-dz-desc').textContent = "Select a folder of format files";
+            document.getElementById('word-folder-toggle').textContent = "Switch back to Individual Files";
+        } else {
+            fileWord.removeAttribute('webkitdirectory');
+            fileWord.removeAttribute('directory');
+            document.getElementById('word-dz-title').textContent = "Approved Format";
+            document.getElementById('word-dz-desc').textContent = "Drop format files (Word, PDF, or folder)";
+            document.getElementById('word-folder-toggle').textContent = "Switch to Entire Folder Upload";
+        }
+        fileWord.value = '';
+        wordFilesList = [];
+        document.getElementById('name-word').style.display = 'none';
+    }
+
+    async function traverseEntry(entry) {
+        const files = [];
+        if (entry.isFile) {
+            const file = await new Promise((resolve) => entry.file(resolve));
+            files.push(file);
+        } else if (entry.isDirectory) {
+            const dirReader = entry.createReader();
+            const entries = await new Promise((resolve) => {
+                dirReader.readEntries(resolve);
+            });
+            for (const subEntry of entries) {
+                const subFiles = await traverseEntry(subEntry);
+                files.push(...subFiles);
+            }
+        }
+        return files;
+    }
+
+    function setupDropzone(dzElement, fileArrayRef, labelElement, onUpdated) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dzElement.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dzElement.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dzElement.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dzElement.classList.remove('dragover');
+            }, false);
+        });
+
+        dzElement.addEventListener('drop', async (e) => {
+            const items = e.dataTransfer.items;
+            const collectedFiles = [];
+
+            if (items && items.length > 0) {
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if (item.webkitGetAsEntry) {
+                        const entry = item.webkitGetAsEntry();
+                        if (entry) {
+                            const files = await traverseEntry(entry);
+                            collectedFiles.push(...files);
+                        }
+                    } else if (item.kind === 'file') {
+                        collectedFiles.push(item.getAsFile());
+                    }
+                }
+            } else if (e.dataTransfer.files) {
+                for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    collectedFiles.push(e.dataTransfer.files[i]);
+                }
+            }
+
+            if (collectedFiles.length > 0) {
+                fileArrayRef.length = 0;
+                fileArrayRef.push(...collectedFiles);
+                labelElement.style.display = 'inline-block';
+                labelElement.textContent = collectedFiles.length === 1 
+                    ? collectedFiles[0].name 
+                    : `${collectedFiles.length} file(s) loaded`;
+                if (onUpdated) onUpdated();
+            }
+        });
+    }
+
+    setupDropzone(document.getElementById('dz-excel'), excelFilesList, document.getElementById('name-excel'), checkReady);
+    setupDropzone(document.getElementById('dz-word'), wordFilesList, document.getElementById('name-word'), checkReady);
+    setupDropzone(document.getElementById('dz-pdf'), pdfFilesList, document.getElementById('name-pdf'), checkReady);
+
     fileExcel.addEventListener('change', (e) => {
-        document.getElementById('name-excel').textContent = e.target.files[0]?.name || '';
+        excelFilesList = Array.from(e.target.files);
+        const count = excelFilesList.length;
+        const el = document.getElementById('name-excel');
+        if (count > 0) {
+            el.style.display = 'inline-block';
+            el.textContent = count === 1 ? excelFilesList[0].name : `${count} Excel file(s) selected`;
+        }
         checkReady();
     });
 
     fileWord.addEventListener('change', (e) => {
-        document.getElementById('name-word').textContent = e.target.files[0]?.name || '';
+        wordFilesList = Array.from(e.target.files);
+        const count = wordFilesList.length;
+        const el = document.getElementById('name-word');
+        if (count > 0) {
+            el.style.display = 'inline-block';
+            el.textContent = count === 1 ? wordFilesList[0].name : `${count} Approved Format file(s) selected`;
+        }
         checkReady();
     });
 
     filePdf.addEventListener('change', (e) => {
-        document.getElementById('name-pdf').textContent = e.target.files[0]?.name || '';
+        pdfFilesList = Array.from(e.target.files);
+        const count = pdfFilesList.length;
+        const el = document.getElementById('name-pdf');
+        if (count > 0) {
+            el.style.display = 'inline-block';
+            el.textContent = count === 1 ? pdfFilesList[0].name : `${count} PDF file(s) selected`;
+        }
         checkReady();
     });
 
-    async function runAudit() {
+    async function runBatchAudit() {
         btnRun.disabled = true;
-        btnRun.textContent = "Analyzing & Correcting Layout...";
+        btnRun.textContent = "Processing Batch Queue...";
 
         const formData = new FormData();
-        formData.append('excel', fileExcel.files[0]);
-        formData.append('pdf', filePdf.files[0]);
-        if (fileWord.files.length > 0) {
-            formData.append('word', fileWord.files[0]);
+
+        const pdfsToSend = pdfFilesList.length > 0 ? pdfFilesList : Array.from(filePdf.files);
+        for (let i = 0; i < pdfsToSend.length; i++) {
+            formData.append('pdf', pdfsToSend[i]);
+        }
+
+        const excelsToSend = excelFilesList.length > 0 ? excelFilesList : Array.from(fileExcel.files);
+        for (let i = 0; i < excelsToSend.length; i++) {
+            formData.append('excel', excelsToSend[i]);
+        }
+
+        const wordsToSend = wordFilesList.length > 0 ? wordFilesList : Array.from(fileWord.files);
+        for (let i = 0; i < wordsToSend.length; i++) {
+            formData.append('word', wordsToSend[i]);
         }
 
         try {
@@ -461,50 +610,41 @@
 
             const data = await resp.json();
             if (!data.success) {
-                alert("Error processing files: " + (data.error || "Unknown error"));
+                alert("Audit notice: " + (data.error || "Batch processing failed."));
                 return;
             }
 
-            // Display Results
             document.getElementById('results-panel').style.display = 'block';
-            document.getElementById('stat-errors').textContent = data.summary.failed;
-            document.getElementById('stat-passed').textContent = data.summary.passed;
-            
-            const statusEl = document.getElementById('stat-status');
-            if (data.summary.failed > 0) {
-                statusEl.innerHTML = `<span class="badge-status badge-fail">REJECTED</span>`;
-            } else {
-                statusEl.innerHTML = `<span class="badge-status badge-pass">APPROVED</span>`;
-            }
+            document.getElementById('stat-total').textContent = data.batch_summary.total_files;
+            document.getElementById('stat-approved').textContent = data.batch_summary.approved_files;
+            document.getElementById('stat-rejected').textContent = data.batch_summary.rejected_files;
+            document.getElementById('dl-zip').href = data.batch_summary.zip_download;
 
-            // Hook download buttons
-            document.getElementById('dl-redlined').href = data.downloads.redlined;
-            document.getElementById('dl-corrected').href = data.downloads.corrected;
-
-            // Render Table
-            const tbody = document.getElementById('findings-table-body');
+            const tbody = document.getElementById('files-table-body');
             tbody.innerHTML = '';
-            data.findings.forEach(f => {
+
+            data.files.forEach(f => {
                 const tr = document.createElement('tr');
-                const isFail = f.status === 'fail';
+                const isFail = f.status === 'REJECTED';
                 tr.innerHTML = `
-                    <td><strong>${f.category}</strong></td>
-                    <td>${f.type}</td>
-                    <td><span class="${isFail ? 'strike' : ''}">${f.found}</span></td>
-                    <td><span class="corrected-val">${f.expected}</span></td>
-                    <td><span class="pill ${isFail ? 'pill-fail' : 'pill-pass'}">${isFail ? 'ERROR' : 'PASS'}</span></td>
+                    <td><strong>${f.filename}</strong></td>
+                    <td><span class="badge-status ${isFail ? 'badge-fail' : 'badge-pass'}">${f.status}</span></td>
+                    <td><span style="color: ${isFail ? 'var(--error)' : 'var(--success)'}; font-weight:600;">${f.failed} Error(s)</span></td>
+                    <td>
+                        <a href="${f.downloads.corrected}" class="btn-action-small feat">⬇️ Corrected PDF</a>
+                        <a href="${f.downloads.redlined}" class="btn-action-small">🔍 Redlined PDF</a>
+                    </td>
                 `;
                 tbody.appendChild(tr);
             });
 
-            // Smooth scroll to results
             document.getElementById('results-panel').scrollIntoView({ behavior: 'smooth' });
 
         } catch (err) {
-            alert("Network or server error occurred: " + err.message);
+            alert("Network error: " + err.message);
         } finally {
             btnRun.disabled = false;
-            btnRun.textContent = "Run Audit & Generate Corrected Files";
+            btnRun.textContent = "Run Batch Audit & Generate Outputs";
         }
     }
 </script>
