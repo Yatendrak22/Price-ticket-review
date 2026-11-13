@@ -137,47 +137,71 @@ def parse_master_data(excel_files, word_files):
     return price_db, promo_db, terms_clauses
 
 def is_product_in_pdf(product_details, pdf_text_lower):
-    det_lower = product_details.lower()
+    """
+    Checks if a product from the master Excel is actually on this agency's PDF ticket.
+    Discards any product line not featured on this specific layout.
+    """
+    det = product_details.lower()
 
-    if "pencil" in det_lower:
-        if "pro" in det_lower and "pencil pro" in pdf_text_lower:
+    # 1. ACCESSORIES
+    if 'pencil' in det:
+        if 'pro' in det and 'pencil pro' in pdf_text_lower:
             return True
-        if "usb-c" in det_lower and ("pencil (usb-c)" in pdf_text_lower or "pencil usb-c" in pdf_text_lower):
+        if 'usb-c' in det and ('pencil (usb-c)' in pdf_text_lower or 'pencil usb-c' in pdf_text_lower):
             return True
-        if ("1st" in det_lower or "first" in det_lower) and "1st generation" in pdf_text_lower:
+        if ('1st' in det or 'first' in det) and '1st generation' in pdf_text_lower:
             return True
-        return "apple pencil" in pdf_text_lower
+        return 'apple pencil' in pdf_text_lower
 
-    if "magic keyboard" in det_lower and "magic keyboard" in pdf_text_lower:
-        return True
+    if 'magic keyboard' in det:
+        return 'magic keyboard' in pdf_text_lower
 
-    if "smart folio" in det_lower and "smart folio" in pdf_text_lower:
-        return True
+    if 'smart folio' in det:
+        return 'smart folio' in pdf_text_lower
 
-    if "keyboard" in det_lower and "keyboard" in pdf_text_lower:
-        return True
+    if 'bluetooth keyboard' in det or 'keyboards' in det:
+        return 'keyboard' in pdf_text_lower
 
-    cap_match = re.search(r'\b(64gb|128gb|256gb|512gb|1tb|2tb)\b', det_lower)
-    if not cap_match:
-        return len(det_lower) > 5 and det_lower in pdf_text_lower
+    # 2. CAPACITY FILTER: If Excel specifies a capacity (128GB, 256GB, 512GB, 1TB, 2TB), it MUST exist in the PDF
+    cap_match = re.search(r'\b(64gb|128gb|256gb|512gb|1tb|2tb)\b', det)
+    if cap_match:
+        cap = cap_match.group(1)
+        if cap not in pdf_text_lower:
+            return False
 
-    capacity = cap_match.group(1)
+    # 3. SCREEN SIZE FILTER: If Excel specifies 13-inch, it must be in the PDF
+    if '13-inch' in det or '13 inch' in det or '13"' in det:
+        if '13-inch' not in pdf_text_lower and '13 inch' not in pdf_text_lower and '13"' not in pdf_text_lower:
+            return False
 
-    if capacity not in pdf_text_lower:
+    # 4. MODEL DISCRIMINATION:
+    # A) iPad Pro tablet: Must be an actual iPad Pro tablet heading, not 'A20 Pro' chip or 'Pencil Pro' accessory
+    if 'ipad pro' in det:
+        has_ipad_pro = bool(re.search(r'\bipad\s+pro\b(?!\s*model)', pdf_text_lower))
+        if not has_ipad_pro:
+            return False
+
+    # B) iPad Air tablet
+    if 'air' in det and 'air' not in pdf_text_lower:
         return False
 
-    if "mini" in det_lower:
-        return "ipad mini" in pdf_text_lower
-    elif "ipad" in det_lower:
-        return "ipad" in pdf_text_lower
-    elif "macbook" in det_lower:
-        return "macbook" in pdf_text_lower
-    elif "iphone" in det_lower:
-        return "iphone" in pdf_text_lower
-    elif "watch" in det_lower:
-        return "watch" in pdf_text_lower
+    # C) iPad mini tablet
+    if 'mini' in det:
+        return 'mini' in pdf_text_lower
 
-    return False
+    # D) Standard iPad (e.g. iPad A16 or 11-inch iPad)
+    if 'ipad' in det:
+        return 'ipad' in pdf_text_lower
+
+    # E) Other Apple product lines
+    if 'macbook' in det and 'macbook' not in pdf_text_lower:
+        return False
+    if 'iphone' in det and 'iphone' not in pdf_text_lower:
+        return False
+    if 'watch' in det and 'watch' not in pdf_text_lower:
+        return False
+
+    return True
 
 def audit_single_pdf(pdf_path, original_filename, price_db, promo_db, terms_clauses, session_id):
     safe_base = os.path.splitext(os.path.basename(original_filename))[0]
