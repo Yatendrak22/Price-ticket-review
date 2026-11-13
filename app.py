@@ -141,70 +141,144 @@ def parse_master_data(excel_files, word_files):
     for word_path in word_files:
         if not word_path or not os.path.exists(word_path) or os.path.getsize(word_path) == 0:
             continue
+        
+        try:
+            pdoc = fitz.open(word_path, filetype="pdf")
+            for page in pdoc:
+                for line in page.get_text("text").split('\n'):
+                    txt = normalize(line)
+                    if txt and len(txt) > 20:
+                        terms_clauses.append(txt)
+            pdoc.close()
+            if terms_clauses:
+                continue
+        except Exception:
+            pass
+
         try:
             doc = docx.Document(word_path)
             for p in doc.paragraphs:
                 txt = normalize(p.text)
                 if txt and len(txt) > 20:
                     terms_clauses.append(txt)
+            if terms_clauses:
+                continue
+        except Exception:
+            pass
+
+        try:
+            with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f.read().split('\n'):
+                    txt = normalize(line)
+                    if len(txt) > 20:
+                        terms_clauses.append(txt)
         except Exception:
             pass
         
     return price_db, model_offers, terms_clauses
 
-def is_product_in_pdf(product_details, pdf_text_lower):
-    det = product_details.lower()
+def find_excel_sku_for_pdf_product(pdf_item_name, price_db):
+    item_lower = pdf_item_name.lower().strip()
+    
+    # 1. Accessory matching
+    if "pencil" in item_lower:
+        for ex in price_db:
+            e = ex["details"].lower()
+            if "pro" in item_lower and ("pro" in e and "pencil" in e):
+                return ex
+            if "usb-c" in item_lower and ("usb-c" in e and "pencil" in e):
+                return ex
+            if ("1st" in item_lower or "first" in item_lower) and ("1st" in e or "first" in e) and "pencil" in e:
+                return ex
+        return None
 
-    if 'pencil' in det:
-        if 'pro' in det and 'pencil pro' in pdf_text_lower:
-            return True
-        if 'usb-c' in det and ('pencil (usb-c)' in pdf_text_lower or 'pencil usb-c' in pdf_text_lower):
-            return True
-        if ('1st' in det or 'first' in det) and '1st generation' in pdf_text_lower:
-            return True
-        return 'apple pencil' in pdf_text_lower
+    if "magic keyboard" in item_lower:
+        for ex in price_db:
+            if "magic keyboard" in ex["details"].lower():
+                return ex
+        return None
 
-    if 'magic keyboard' in det:
-        return 'magic keyboard' in pdf_text_lower
+    if "smart folio" in item_lower:
+        for ex in price_db:
+            if "smart folio" in ex["details"].lower():
+                return ex
+        return None
 
-    if 'smart folio' in det:
-        return 'smart folio' in pdf_text_lower
+    if "bluetooth" in item_lower or "keyboard" in item_lower:
+        for ex in price_db:
+            if "keyboard" in ex["details"].lower():
+                return ex
+        return None
 
-    if 'bluetooth keyboard' in det or 'keyboards' in det:
-        return 'keyboard' in pdf_text_lower
+    # 2. Hardware configuration matching (model + capacity + connectivity)
+    cap_match = re.search(r'\b(64gb|128gb|256gb|512gb|1tb|2tb)\b', item_lower)
+    cap = cap_match.group(1) if cap_match else ""
+    is_cellular = ("cellular" in item_lower or "+" in item_lower)
 
-    cap_match = re.search(r'\b(64gb|128gb|256gb|512gb|1tb|2tb)\b', det)
-    if cap_match:
-        cap = cap_match.group(1)
-        if cap not in pdf_text_lower:
-            return False
+    for ex in price_db:
+        e = ex["details"].lower()
+        if "mini" in item_lower:
+            if "mini" not in e:
+                continue
+        elif "ipad" in item_lower:
+            if "ipad" not in e or "mini" in e:
+                continue
 
-    if '13-inch' in det or '13 inch' in det or '13"' in det:
-        if '13-inch' not in pdf_text_lower and '13 inch' not in pdf_text_lower and '13"' not in pdf_text_lower:
-            return False
+        if cap and cap not in e:
+            continue
 
-    if 'ipad pro' in det:
-        has_ipad_pro = bool(re.search(r'\bipad\s+pro\b(?!\s*model)', pdf_text_lower))
-        if not has_ipad_pro:
-            return False
+        if is_cellular:
+            if "cellular" not in e:
+                continue
+        else:
+            if "cellular" in e:
+                continue
 
-    if 'air' in det and 'air' not in pdf_text_lower:
-        return False
+        return ex
 
-    if 'mini' in det:
-        return 'mini' in pdf_text_lower
+    return None
 
-    if 'ipad' in det:
-        return 'ipad' in pdf_text_lower
+def extract_products_mentioned_in_pdf(pdf_text):
+    pdf_text_lower = pdf_text.lower()
+    pdf_products = []
 
-    if 'macbook' in det and 'macbook' not in pdf_text_lower:
-        return False
-    if 'iphone' in det and 'iphone' not in pdf_text_lower:
-        return False
-    if 'watch' in det and 'watch' not in pdf_text_lower:
-        return False
+    # 1. Accessories
+    opt_matches = re.findall(r'([A-Za-z0-9\s\(\)\-]+?)\s*\(optional\)', pdf_text)
+    for raw in opt_matches:
+        clean_lines = [l.strip() for l in raw.split('\n') if l.strip()]
+        if clean_lines:
+            acc_name = clean_lines[-1]
+            if len(acc_name) > 3 and not re.match(r'^[₹\d,\.]+$', acc_name):
+                if acc_name not in pdf_products:
+                    pdf_products.append(acc_name)
 
-    return True
+    # 2. Hardware models
+    ticket_devices = []
+    if re.search(r'\bipad\s*\(\s*a16\s*\)', pdf_text, re.I) or 'ipad (a16)' in pdf_text_lower:
+        ticket_devices.append('iPad (A16)')
+    if 'ipad mini' in pdf_text_lower:
+        ticket_devices.append('iPad mini')
+    if bool(re.search(r'\bipad\s+pro\b(?!\s*model)', pdf_text, re.I)):
+        ticket_devices.append('iPad Pro')
+    if 'ipad air' in pdf_text_lower:
+        ticket_devices.append('iPad Air')
+
+    found_capacities = []
+    for cap in ['128GB', '256GB', '512GB', '1TB', '2TB']:
+        if re.search(r'\b' + cap + r'\b', pdf_text, re.I):
+            found_capacities.append(cap)
+
+    has_wifi = bool(re.search(r'\bwi-fi\b', pdf_text, re.I))
+    has_cellular = bool(re.search(r'cellular', pdf_text, re.I))
+
+    for dev in ticket_devices:
+        for cap in found_capacities:
+            if has_wifi:
+                pdf_products.append(f"{dev} {cap} Wi-Fi")
+            if has_cellular:
+                pdf_products.append(f"{dev} {cap} Wi-Fi + Cellular")
+
+    return pdf_products
 
 def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_clauses, session_id):
     safe_base = os.path.splitext(os.path.basename(original_filename))[0]
@@ -245,40 +319,48 @@ def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_
         if num:
             pdf_numeric_prices.add(num)
 
-    # 1. HARDWARE & ACCESSORY PRICE VERIFICATION
-    relevant_products = [
-        item for item in price_db 
-        if is_product_in_pdf(item["details"], pdf_text_lower)
-    ]
+    # 1. BIDIRECTIONAL PRODUCT VERIFICATION
+    pdf_products_mentioned = extract_products_mentioned_in_pdf(pdf_full_text)
 
-    if relevant_products:
-        seen_details = set()
-        for item in relevant_products:
-            simple_name = re.sub(r'\s*-\s*(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white).*', '', item["details"], flags=re.IGNORECASE).strip()
+    if price_db and pdf_products_mentioned:
+        for pdf_prod in pdf_products_mentioned:
+            excel_match = find_excel_sku_for_pdf_product(pdf_prod, price_db)
             
-            key = (simple_name.lower(), item["mrp_num"])
-            if key in seen_details:
-                continue
-            seen_details.add(key)
-
-            exp_mrp = item["mrp_num"]
-            matched = (exp_mrp in pdf_numeric_prices)
-
-            audit_findings.append({
-                "category": "Product Price Verification",
-                "type": simple_name,
-                "found": format_inr(exp_mrp) if matched else "Price Mismatch / Not Found in PDF",
-                "expected": format_inr(exp_mrp),
-                "status": "pass" if matched else "fail"
-            })
-            
-            if not matched:
-                for r in page.search_for(simple_name[:15]):
+            if not excel_match:
+                audit_findings.append({
+                    "category": "Product Authorization Check",
+                    "type": pdf_prod,
+                    "found": f"'{pdf_prod}' featured on agency ticket",
+                    "expected": "Not approved in Excel master database",
+                    "status": "fail"
+                })
+                search_term = pdf_prod.split()[0] if len(pdf_prod.split()) > 0 else pdf_prod
+                for r in page.search_for(search_term):
                     annot = page.add_highlight_annot(r)
                     annot.set_colors(stroke=(1, 0, 0))
                     annot.update()
-                    note = page.add_text_annot(r.top_right, f"PRICE ERROR: Expected MRP {format_inr(exp_mrp)}")
+                    note = page.add_text_annot(r.top_right, f"UNAUTHORIZED PRODUCT: '{pdf_prod}' is not available in approved Excel master sheet.")
                     note.update()
+            else:
+                exp_mrp = excel_match["mrp_num"]
+                price_matched = (exp_mrp in pdf_numeric_prices)
+                
+                audit_findings.append({
+                    "category": "Product Price Verification",
+                    "type": pdf_prod,
+                    "found": format_inr(exp_mrp) if price_matched else "Price Mismatch / Not Found in PDF",
+                    "expected": format_inr(exp_mrp),
+                    "status": "pass" if price_matched else "fail"
+                })
+                
+                if not price_matched:
+                    search_term = pdf_prod.split()[0] if len(pdf_prod.split()) > 0 else pdf_prod
+                    for r in page.search_for(search_term):
+                        annot = page.add_highlight_annot(r)
+                        annot.set_colors(stroke=(1, 0, 0))
+                        annot.update()
+                        note = page.add_text_annot(r.top_right, f"PRICE ERROR: Expected MRP {format_inr(exp_mrp)}")
+                        note.update()
 
     placeholders = page.search_for("₹000.00") + page.search_for("₹000")
     if placeholders:
@@ -294,14 +376,13 @@ def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_
             "status": "fail"
         })
 
-    # 2. ACCURATE CASHBACK & PROMOTIONAL AUDIT (CROSS-CHECKED AGAINST EXCEL)
+    # 2. VERIFY OFFERS / AFFORDABILITY (CASHBACK & EMI FROM EXCEL)
     ticket_devices = []
     if "ipad (a16)" in pdf_text_lower or ("ipad" in pdf_text_lower and "a16" in pdf_text_lower):
         ticket_devices.append("iPad (A16)")
     if "ipad mini" in pdf_text_lower or "mini" in pdf_text_lower:
         ticket_devices.append("iPad mini")
 
-    # A) HEADLINE BANNER CASHBACK CHECK:
     headline_cb_match = re.search(r'up\s+to\s+₹?\s*(\d[\d,]*)\*?\s*instant\s+cashback', normalized_full_text, re.IGNORECASE)
     pdf_headline_cb = extract_numeric(headline_cb_match.group(1)) if headline_cb_match else None
 
@@ -329,13 +410,11 @@ def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_
                 note = page.add_text_annot(r.top_right, f"CASHBACK MISMATCH: Found {format_inr(pdf_headline_cb)}, expected {format_inr(expected_max_cb)} as per Excel.")
                 note.update()
 
-    # B) MODEL-SPECIFIC CASHBACK IN T&C PARAGRAPH:
     cb_sentence_match = re.search(r'instant\s+cashback\s+of\s+₹?\s*(\d[\d,]*)\s*(?:&|and)\s*₹?\s*(\d[\d,]*)\s*is\s+available\s+on\s*([^\.]+)', normalized_full_text, re.IGNORECASE)
     if cb_sentence_match:
         pdf_cb_first = extract_numeric(cb_sentence_match.group(1))
         pdf_cb_second = extract_numeric(cb_sentence_match.group(2))
         
-        # Check iPad (A16) cashback
         if "iPad (A16)" in model_offers and model_offers["iPad (A16)"].get("cashback"):
             exp_a16_cb = model_offers["iPad (A16)"]["cashback"]
             a16_cb_match = (pdf_cb_first == exp_a16_cb)
@@ -354,7 +433,6 @@ def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_
                     note = page.add_text_annot(r.top_right, f"T&C CASHBACK ERROR: Stated {format_inr(pdf_cb_first)} for iPad (A16), but Excel specifies {format_inr(exp_a16_cb)}.")
                     note.update()
 
-        # Check iPad mini cashback
         if "iPad mini" in model_offers and model_offers["iPad mini"].get("cashback"):
             exp_mini_cb = model_offers["iPad mini"]["cashback"]
             mini_cb_match = (pdf_cb_second == exp_mini_cb)
@@ -366,7 +444,6 @@ def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_
                 "status": "pass" if mini_cb_match else "fail"
             })
 
-    # C) STARTING EFFECTIVE PRICE:
     starting_match = re.search(r'starting\s*₹?\s*(\d[\d,]*)\*?', normalized_full_text, re.IGNORECASE)
     if starting_match:
         pdf_starting_price = extract_numeric(starting_match.group(1))
@@ -386,7 +463,6 @@ def audit_single_pdf(pdf_path, original_filename, price_db, model_offers, terms_
                 "status": "pass" if starting_matched else "fail"
             })
 
-    # D) NO COST EMI:
     emi_match = re.search(r'or\s*₹?\s*(\d[\d,]*)\*?\*?\s*p\.m\.', normalized_full_text, re.IGNORECASE)
     if emi_match:
         pdf_emi = extract_numeric(emi_match.group(1))
