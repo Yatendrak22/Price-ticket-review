@@ -4,7 +4,7 @@ import csv
 import uuid
 import zipfile
 import traceback
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, send_file, jsonify, Response
 import fitz  # PyMuPDF
 import openpyxl
 import docx
@@ -15,6 +15,13 @@ app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['OUTPUT_FOLDER'] = os.path.join(BASE_DIR, 'outputs')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    return response
 
 def normalize(text):
     return re.sub(r'\s+', ' ', str(text or '')).strip()
@@ -462,8 +469,11 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
 def index():
     return render_template('index.html')
 
-@app.route('/api/process', methods=['POST'])
+@app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_ticket():
+    if request.method == 'OPTIONS':
+        return Response(status=200)
+
     try:
         pdf_files = request.files.getlist('pdf')
         excel_files = request.files.getlist('excel')
@@ -595,9 +605,9 @@ def serve_openapi_json():
                                     "type": "object",
                                     "required": ["pdf"],
                                     "properties": {
-                                        "pdf": {"type": "array", "items": {"type": "string", "format": "binary"}},
-                                        "excel": {"type": "array", "items": {"type": "string", "format": "binary"}},
-                                        "word": {"type": "array", "items": {"type": "string", "format": "binary"}}
+                                        "pdf": {"type": "string", "format": "binary", "description": "Agency PDF ticket"},
+                                        "excel": {"type": "string", "format": "binary", "description": "Master pricing spreadsheet (.xlsx)"},
+                                        "word": {"type": "string", "format": "binary", "description": "Approved format document (.docx, .pdf, or .txt)"}
                                     }
                                 }
                             }
