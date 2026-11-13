@@ -137,47 +137,46 @@
             margin-bottom: 40px;
         }
 
-        .btn-primary {
-            background-color: var(--accent);
-            color: white;
-            font-size: 16px;
-            font-weight: 500;
-            padding: 14px 32px;
-            border-radius: 980px;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.2s ease, transform 0.1s ease;
-            box-shadow: 0 4px 14px rgba(0, 113, 227, 0.3);
-        }
+        terms_clauses = []
+    for word_path in word_files:
+        if not word_path or not os.path.exists(word_path) or os.path.getsize(word_path) == 0:
+            continue
+        
+        # 1. If it's a PDF file (Approved Format PDF template)
+        try:
+            pdoc = fitz.open(word_path, filetype="pdf")
+            for page in pdoc:
+                for line in page.get_text("text").split('\n'):
+                    txt = normalize(line)
+                    if txt and len(txt) > 20:
+                        terms_clauses.append(txt)
+            pdoc.close()
+            if terms_clauses:
+                continue
+        except Exception:
+            pass
 
-        .btn-primary:hover {
-            background-color: var(--accent-hover);
-        }
+        # 2. If it's a Word document (.docx)
+        try:
+            doc = docx.Document(word_path)
+            for p in doc.paragraphs:
+                txt = normalize(p.text)
+                if txt and len(txt) > 20:
+                    terms_clauses.append(txt)
+            if terms_clauses:
+                continue
+        except Exception:
+            pass
 
-        .btn-primary:active {
-            transform: scale(0.98);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
-
-        /* Results Card */
-        .results-container {
-            display: none;
-            background: var(--card-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 32px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-            animation: fadeIn 0.4s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+        # 3. Plain text / fallback
+        try:
+            with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f.read().split('\n'):
+                    txt = normalize(line)
+                    if len(txt) > 20:
+                        terms_clauses.append(txt)
+        except Exception:
+            pass
             to { opacity: 1; transform: translateY(0); }
         }
 
