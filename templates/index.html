@@ -38,9 +38,9 @@
             align-items: center;
         }
 
-        .container {
+                .container {
             width: 100%;
-            max-width: 900px;
+            max-width: 1120px;
         }
 
         header {
@@ -64,27 +64,16 @@
 
         .upload-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
             margin-bottom: 24px;
         }
 
-        .dropzone {
-            background: #FFFFFF;
-            border: 2px dashed #E5E7EB;
-            border-radius: var(--radius);
-            padding: 32px 24px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            position: relative;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-            min-height: 180px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
+        @media (max-width: 860px) {
+            .upload-grid {
+                grid-template-columns: 1fr;
+            }
+        }        }
 
         .dropzone.active-border,
         .dropzone:hover,
