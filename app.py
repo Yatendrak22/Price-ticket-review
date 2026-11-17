@@ -74,9 +74,9 @@ def parse_master_data(excel_files, word_files):
                 mpn_idx = find_idx(["mpn", "part number", "sku"])
                 details_idx = find_idx(["product details", "product", "details", "description", "title"])
                 mrp_idx = find_idx(["mrp", "price", "regular price"])
-                eff_idx = find_idx(["effective price", "cashback effective price", "price ticket : cashback"])
-                loan_idx = find_idx(["price ticket - loans", "loans", "emi", "loan"])
-                cb_non_emi = find_idx(["cashback: icici bank credit card non emi", "non emi", "cashback"])
+                eff_idx = find_idx(["price ticket : cashback effective price on cards", "cashback effective price", "effective price"])
+                loan_idx = find_idx(["price ticket - emi (loans 24|0 scheme)", "price ticket - emi", "price ticket - loans", "loans 24|0", "24|0 scheme", "loans", "emi", "loan"])
+                cb_non_emi = find_idx(["instant store discount/dg", "instant store discount", "cashback: icici bank credit card non emi", "non emi", "cashback"])
                 cb_emi = find_idx(["cashback: icici bank credit card emi", "emi cashback"])
                 scheme_idx = find_idx(["schemes", "scheme"])
 
@@ -202,6 +202,7 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
     pdf_text_lower = normalized_full_text.lower()
     audit_findings = []
 
+    # 1. EXTRACT ALL PRICES DISPLAYED IN THE PDF
     pdf_price_matches = re.findall(r'₹\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)', pdf_full_text)
     pdf_numeric_prices = set(extract_numeric(p) for p in pdf_price_matches if extract_numeric(p))
 
@@ -347,9 +348,11 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
                 "status": "pass" if second_matched else "fail"
             })
 
+    # C) Starting effective price check (Top Right Header)
     starting_match = re.search(r'starting\s*₹?\s*(\d[\d,]*)\*?', normalized_full_text, re.IGNORECASE)
     if starting_match:
         pdf_starting_price = extract_numeric(starting_match.group(1))
+        
         first_model_items = [it for it in matched_products_on_ticket if "mini" not in it["details"].lower() and it.get("mrp_num")]
         if first_model_items:
             base_item = min(first_model_items, key=lambda x: x["mrp_num"])
@@ -360,12 +363,20 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
                 start_matched = (pdf_starting_price == exp_starting_price)
                 audit_findings.append({
                     "category": "Affordability / Offers",
-                    "type": "Starting Effective Price Calculation",
+                    "type": "Starting Effective Price (Top Right Header)",
                     "found": f"Starting {format_inr(pdf_starting_price)}*",
                     "expected": f"Starting {format_inr(exp_starting_price)}* (from {excel_filename})",
                     "status": "pass" if start_matched else "fail"
                 })
+                if not start_matched:
+                    for r in page.search_for(starting_match.group(0)):
+                        annot = page.add_highlight_annot(r)
+                        annot.set_colors(stroke=(1, 0, 0))
+                        annot.update()
+                        note = page.add_text_annot(r.top_right, f"HEADER PRICE ERROR: Starting price shows {format_inr(pdf_starting_price)}, but Excel mandates {format_inr(exp_starting_price)} (MRP {format_inr(base_item['mrp_num'])} minus {format_inr(base_cb)} Cashback).")
+                        note.update()
 
+    # D) Starting No-Cost EMI check (Top Right Header)
     emi_match = re.search(r'or\s*₹?\s*(\d[\d,]*)\*?\*?\s*p\.m\.', normalized_full_text, re.IGNORECASE)
     if emi_match:
         pdf_emi = extract_numeric(emi_match.group(1))
@@ -375,11 +386,18 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
             emi_matched = (pdf_emi == exp_emi)
             audit_findings.append({
                 "category": "Affordability / Offers",
-                "type": "Starting Monthly No-Cost EMI",
+                "type": "Starting Monthly No-Cost EMI (Top Right Header)",
                 "found": f"{format_inr(pdf_emi)} p.m.",
                 "expected": f"{format_inr(exp_emi)} p.m. (from {excel_filename})",
                 "status": "pass" if emi_matched else "fail"
             })
+            if not emi_matched:
+                for r in page.search_for(emi_match.group(0)):
+                    annot = page.add_highlight_annot(r)
+                    annot.set_colors(stroke=(1, 0, 0))
+                    annot.update()
+                    note = page.add_text_annot(r.top_right, f"HEADER EMI ERROR: Stated {format_inr(pdf_emi)} p.m., expected {format_inr(exp_emi)} p.m. from Excel.")
+                    note.update()
 
     # 4. TERMS & CONDITIONS
     has_reseller_notice = check_statutory_notice(normalized_full_text)
