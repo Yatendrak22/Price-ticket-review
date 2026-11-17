@@ -660,6 +660,22 @@ def serve_swagger_ui():
     </html>
     """
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        res = app.make_response(("", 200))
+        res.headers['Access-Control-Allow-Origin'] = '*'
+        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+        return res
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    return response
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5050))
     print(f"Starting Price Ticket Verification Engine on port {port}")
