@@ -8,7 +8,7 @@
         :root {
             --bg: #F8F9FB;
             --card-bg: #FFFFFF;
-            --border: #E5E7EB;
+            --border: #D1D5DB;
             --text-primary: #111827;
             --text-secondary: #6B7280;
             --accent: #2563EB;
@@ -17,7 +17,7 @@
             --btn-blue-hover: #3B82F6;
             --success: #10B981;
             --error: #EF4444;
-            --radius: 20px;
+            --radius: 18px;
         }
 
         * {
@@ -38,7 +38,7 @@
             align-items: center;
         }
 
-                .container {
+        .container {
             width: 100%;
             max-width: 1120px;
         }
@@ -73,14 +73,32 @@
             .upload-grid {
                 grid-template-columns: 1fr;
             }
-        }        }
+        }
 
-        .dropzone.active-border,
+        .dropzone {
+            background: #FFFFFF;
+            border: 2px dashed #D1D5DB;
+            border-radius: var(--radius);
+            padding: 32px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            position: relative;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+            min-height: 190px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
         .dropzone:hover,
         .dropzone.dragover {
             border-color: #2563EB;
             border-style: dashed;
-            background: #FFFFFF;
+            background: #F0F7FF;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12), 0 4px 12px rgba(37, 99, 235, 0.08);
+            transform: translateY(-2px);
         }
 
         .dropzone input[type="file"] {
@@ -203,11 +221,11 @@
         }
 
         .stat-card {
-            background: var(--bg);
+            background: #F8F9FB;
             padding: 20px;
             border-radius: 12px;
             text-align: center;
-            border: 1px solid var(--border);
+            border: 1px solid #E5E7EB;
         }
 
         .stat-val {
@@ -247,10 +265,10 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
-            background: var(--bg);
+            background: #F8F9FB;
             border-radius: 12px;
             margin-bottom: 30px;
-            border: 1px solid var(--border);
+            border: 1px solid #E5E7EB;
         }
 
         .btn-download {
@@ -288,7 +306,7 @@
             padding: 12px 16px;
             color: var(--text-secondary);
             font-weight: 600;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid #E5E7EB;
             text-transform: uppercase;
             font-size: 12px;
             letter-spacing: 0.5px;
@@ -296,7 +314,7 @@
 
         td {
             padding: 16px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid #E5E7EB;
             vertical-align: middle;
         }
 
@@ -308,7 +326,7 @@
             font-size: 12px;
             font-weight: 600;
             margin-right: 6px;
-            border: 1px solid var(--border);
+            border: 1px solid #E5E7EB;
             background: #FFFFFF;
             color: var(--text-primary);
         }
@@ -339,7 +357,7 @@
 
     <div class="upload-grid">
         <!-- 1. Master Pricing (Excel) -->
-        <div class="dropzone active-border" id="dz-excel">
+        <div class="dropzone" id="dz-excel">
             <input type="file" id="file-excel" accept=".xlsx,.xls,.csv,*" multiple>
             <div class="dropzone-icon">📊</div>
             <div class="dropzone-title">Master Pricing (Excel / CSV)</div>
@@ -352,7 +370,7 @@
             <input type="file" id="file-word" accept=".docx,.doc,.pdf,.txt,.rtf,*" multiple>
             <div class="dropzone-icon">📝</div>
             <div class="dropzone-title" id="word-dz-title">Approved Format</div>
-            <div class="dropzone-desc" id="word-dz-desc">Drop format files (Word, PDF, or folder)</div>
+            <div class="dropzone-desc">Drop format files (Word, PDF, or folder)</div>
             <span class="toggle-folder-btn" onclick="toggleWordFolderMode(event)" id="word-folder-toggle">Switch to Entire Folder Upload</span>
             <div class="file-selected" id="name-word" style="display:none;"></div>
         </div>
@@ -362,7 +380,7 @@
             <input type="file" id="file-pdf" accept=".pdf,*" multiple>
             <div class="dropzone-icon">📁</div>
             <div class="dropzone-title" id="pdf-dz-title">Agency PDFs (Files or Folder)</div>
-            <div class="dropzone-desc" id="pdf-dz-desc">Drop agency PDFs or folders here</div>
+            <div class="dropzone-desc">Drop agency PDFs or folders here</div>
             <span class="toggle-folder-btn" onclick="toggleFolderMode(event)" id="folder-toggle">Switch to Entire Folder Upload</span>
             <div class="file-selected" id="name-pdf" style="display:none;"></div>
         </div>
