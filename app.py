@@ -116,13 +116,11 @@ def parse_master_data(excel_files, word_files):
         except Exception as e:
             print("Notice: Excel parsing notice:", e)
 
-    # Extract terms clauses from uploaded Approved Format files
     terms_clauses = []
     for word_path in word_files:
         if not word_path or not os.path.exists(word_path) or os.path.getsize(word_path) == 0:
             continue
         
-        # 1. PDF template
         try:
             pdoc = fitz.open(word_path, filetype="pdf")
             for page in pdoc:
@@ -136,7 +134,6 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
 
-        # 2. Word document
         try:
             doc = docx.Document(word_path)
             for p in doc.paragraphs:
@@ -148,7 +145,6 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
 
-        # 3. Plain text
         try:
             with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f.read().split('\n'):
@@ -296,30 +292,80 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
             "status": "fail"
         })
 
-    # 3. CASHBACK & OFFER VERIFICATION
-    headline_cb_match = re.search(r'up\s+to\s+₹?\s*(\d[\d,]*)\*?\s*instant\s+cashback', normalized_full_text, re.IGNORECASE)
-    pdf_headline_cb = extract_numeric(headline_cb_match.group(1)) if headline_cb_match else None
+    # -----------------------------------------------------------------
+    # BIDIRECTIONAL CHECK 3:
+    # COMPARISON PRICE TICKET TOP-RIGHT HEADER VERIFICATION
+    # In combo tickets (2+ products), the top right corner always shows:
+    # "Starting ₹<Lowest Base Price>* or ₹<Lowest EMI>** p.m."
+    # The system dynamically finds the lowest base model from uploaded Excel.
+    # -----------------------------------------------------------------
+    hardware_items_on_ticket = [
+        it for it in matched_products_on_ticket 
+        if not any(acc in it["details"].lower() for acc in ["pencil", "keyboard", "folio", "case", "adapter", "mouse", "trackpad", "airtag"])
+    ]
 
-    ticket_cbs = [item["cashback_num"] for item in matched_products_on_ticket if item.get("cashback_num")]
-    expected_headline_cb = max(ticket_cbs) if ticket_cbs else None
+    exp_starting_price = None
+    lowest_model_name = ""
+    lowest_model_item = None
 
-    if expected_headline_cb and pdf_headline_cb:
-        cb_matched = (pdf_headline_cb == expected_headline_cb)
+    if hardware_items_on_ticket:
+        for it in hardware_items_on_ticket:
+            cb = it.get("cashback_num") or 0
+            eff = it.get("effective_num") or (it["mrp_num"] - cb)
+            it["computed_effective"] = eff
+
+        lowest_model_item = min(hardware_items_on_ticket, key=lambda x: x["computed_effective"])
+        exp_starting_price = lowest_model_item["computed_effective"]
+        lowest_model_name = re.sub(r'\s*-\s*(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white).*', '', lowest_model_item["details"], flags=re.IGNORECASE).strip()
+
+    # C) Starting effective price check (Top Right Header)
+    starting_match = re.search(r'starting\s*₹?\s*(\d[\d,]*)\*?', normalized_full_text, re.IGNORECASE)
+    if starting_match and exp_starting_price:
+        pdf_starting_price = extract_numeric(starting_match.group(1))
+        start_matched = (pdf_starting_price == exp_starting_price)
+
         audit_findings.append({
             "category": "Affordability / Offers",
-            "type": "Headline Instant Cashback Banner",
-            "found": f"Up to {format_inr(pdf_headline_cb)} Cashback",
-            "expected": f"Up to {format_inr(expected_headline_cb)} Cashback (from {excel_filename})",
-            "status": "pass" if cb_matched else "fail"
+            "type": f"Top-Right Starting Price ({lowest_model_name})",
+            "found": f"Starting {format_inr(pdf_starting_price)}*",
+            "expected": f"Starting {format_inr(exp_starting_price)}* (Base model: {lowest_model_name} from {excel_filename})",
+            "status": "pass" if start_matched else "fail"
         })
-        if not cb_matched and headline_cb_match:
-            for r in page.search_for(headline_cb_match.group(0)):
+        if not start_matched:
+            for r in page.search_for(starting_match.group(0)):
                 annot = page.add_highlight_annot(r)
                 annot.set_colors(stroke=(1, 0, 0))
                 annot.update()
-                note = page.add_text_annot(r.top_right, f"CASHBACK MISMATCH: PDF shows {format_inr(pdf_headline_cb)}, but active Excel specifies {format_inr(expected_headline_cb)}.")
+                note = page.add_text_annot(
+                    r.top_right, 
+                    f"TOP-RIGHT HEADER ERROR: Stated Starting price is {format_inr(pdf_starting_price)}, but the lowest base model on this ticket is {lowest_model_name} with effective price {format_inr(exp_starting_price)} (MRP {format_inr(lowest_model_item['mrp_num'])} minus {format_inr(lowest_model_item.get('cashback_num') or 0)} Cashback)."
+                )
                 note.update()
 
+    # D) Starting No-Cost EMI check (Top Right Header)
+    emi_match = re.search(r'or\s*₹?\s*(\d[\d,]*)\*?\*?\s*p\.m\.', normalized_full_text, re.IGNORECASE)
+    if emi_match and hardware_items_on_ticket:
+        pdf_emi = extract_numeric(emi_match.group(1))
+        loan_items = [it["loan_num"] for it in hardware_items_on_ticket if it.get("loan_num")]
+        if loan_items:
+            exp_emi = min(loan_items)
+            emi_matched = (pdf_emi == exp_emi)
+            audit_findings.append({
+                "category": "Affordability / Offers",
+                "type": "Top-Right Starting Monthly EMI",
+                "found": f"{format_inr(pdf_emi)} p.m.",
+                "expected": f"{format_inr(exp_emi)} p.m. (Lowest EMI on ticket from {excel_filename})",
+                "status": "pass" if emi_matched else "fail"
+            })
+            if not emi_matched:
+                for r in page.search_for(emi_match.group(0)):
+                    annot = page.add_highlight_annot(r)
+                    annot.set_colors(stroke=(1, 0, 0))
+                    annot.update()
+                    note = page.add_text_annot(r.top_right, f"TOP-RIGHT EMI ERROR: Stated {format_inr(pdf_emi)} p.m., but lowest EMI from Excel is {format_inr(exp_emi)} p.m.")
+                    note.update()
+
+    # E) T&C Cashback sentences verification
     cb_sentence_match = re.search(r'instant\s+cashback\s+of\s+₹?\s*(\d[\d,]*)\s*(?:&|and)\s*₹?\s*(\d[\d,]*)\s*is\s+available\s+on\s*([^\.]+)', normalized_full_text, re.IGNORECASE)
     if cb_sentence_match:
         pdf_cb_first = extract_numeric(cb_sentence_match.group(1))
@@ -355,57 +401,6 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
                 "expected": f"{format_inr(expected_cb_second)} Cashback (from {excel_filename})",
                 "status": "pass" if second_matched else "fail"
             })
-
-    # C) Starting effective price check (Top Right Header)
-    starting_match = re.search(r'starting\s*₹?\s*(\d[\d,]*)\*?', normalized_full_text, re.IGNORECASE)
-    if starting_match:
-        pdf_starting_price = extract_numeric(starting_match.group(1))
-        
-        first_model_items = [it for it in matched_products_on_ticket if "mini" not in it["details"].lower() and it.get("mrp_num")]
-        if first_model_items:
-            base_item = min(first_model_items, key=lambda x: x["mrp_num"])
-            base_cb = base_item.get("cashback_num") or 0
-            exp_starting_price = base_item.get("effective_num") or (base_item["mrp_num"] - base_cb)
-
-            if exp_starting_price:
-                start_matched = (pdf_starting_price == exp_starting_price)
-                audit_findings.append({
-                    "category": "Affordability / Offers",
-                    "type": "Starting Effective Price (Top Right Header)",
-                    "found": f"Starting {format_inr(pdf_starting_price)}*",
-                    "expected": f"Starting {format_inr(exp_starting_price)}* (from {excel_filename})",
-                    "status": "pass" if start_matched else "fail"
-                })
-                if not start_matched:
-                    for r in page.search_for(starting_match.group(0)):
-                        annot = page.add_highlight_annot(r)
-                        annot.set_colors(stroke=(1, 0, 0))
-                        annot.update()
-                        note = page.add_text_annot(r.top_right, f"HEADER PRICE ERROR: Starting price shows {format_inr(pdf_starting_price)}, but Excel mandates {format_inr(exp_starting_price)} (MRP {format_inr(base_item['mrp_num'])} minus {format_inr(base_cb)} Cashback).")
-                        note.update()
-
-    # D) Starting No-Cost EMI check (Top Right Header)
-    emi_match = re.search(r'or\s*₹?\s*(\d[\d,]*)\*?\*?\s*p\.m\.', normalized_full_text, re.IGNORECASE)
-    if emi_match:
-        pdf_emi = extract_numeric(emi_match.group(1))
-        loan_items = [it["loan_num"] for it in matched_products_on_ticket if it.get("loan_num")]
-        if loan_items:
-            exp_emi = min(loan_items)
-            emi_matched = (pdf_emi == exp_emi)
-            audit_findings.append({
-                "category": "Affordability / Offers",
-                "type": "Starting Monthly No-Cost EMI (Top Right Header)",
-                "found": f"{format_inr(pdf_emi)} p.m.",
-                "expected": f"{format_inr(exp_emi)} p.m. (from {excel_filename})",
-                "status": "pass" if emi_matched else "fail"
-            })
-            if not emi_matched:
-                for r in page.search_for(emi_match.group(0)):
-                    annot = page.add_highlight_annot(r)
-                    annot.set_colors(stroke=(1, 0, 0))
-                    annot.update()
-                    note = page.add_text_annot(r.top_right, f"HEADER EMI ERROR: Stated {format_inr(pdf_emi)} p.m., expected {format_inr(exp_emi)} p.m. from Excel.")
-                    note.update()
 
     # 4. TERMS & CONDITIONS
     has_reseller_notice = check_statutory_notice(normalized_full_text)
