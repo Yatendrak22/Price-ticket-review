@@ -48,6 +48,10 @@ def check_statutory_notice(pdf_text):
     return all(tok in clean for tok in tokens)
 
 def parse_master_data(excel_files, word_files):
+    """
+    Dynamically extracts products, prices, cashbacks, and EMIs purely from 
+    whatever Excel file is uploaded in the current request. Zero hardcoding.
+    """
     price_db = []
     excel_names = []
 
@@ -112,11 +116,13 @@ def parse_master_data(excel_files, word_files):
         except Exception as e:
             print("Notice: Excel parsing notice:", e)
 
+    # Extract terms clauses from uploaded Approved Format files
     terms_clauses = []
     for word_path in word_files:
         if not word_path or not os.path.exists(word_path) or os.path.getsize(word_path) == 0:
             continue
         
+        # 1. PDF template
         try:
             pdoc = fitz.open(word_path, filetype="pdf")
             for page in pdoc:
@@ -130,6 +136,7 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
 
+        # 2. Word document
         try:
             doc = docx.Document(word_path)
             for p in doc.paragraphs:
@@ -141,6 +148,7 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
 
+        # 3. Plain text
         try:
             with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f.read().split('\n'):
@@ -502,6 +510,7 @@ def process_ticket():
 
         session_id = str(uuid.uuid4())[:8]
 
+        # Save Excel files uploaded for THIS request
         saved_excel_paths = []
         for ef in excel_files:
             if ef and ef.filename:
@@ -509,6 +518,7 @@ def process_ticket():
                 ef.save(path)
                 saved_excel_paths.append(path)
 
+        # Save Word/PDF Approved Format files uploaded for THIS request
         saved_word_paths = []
         for wf in word_files:
             if wf and wf.filename:
@@ -516,6 +526,14 @@ def process_ticket():
                 wf.save(path)
                 saved_word_paths.append(path)
 
+        # Enforce that validation requires an Excel sheet in THIS run
+        if not saved_excel_paths:
+            return jsonify({
+                "success": False,
+                "error": "No Excel master sheet was provided in this submission. Please select or drag your active Excel file to ensure validation runs strictly against current data."
+            }), 200
+
+        # Parse master data purely from currently uploaded files
         price_db, terms_clauses, active_excel_name = parse_master_data(saved_excel_paths, saved_word_paths)
 
         results = []
