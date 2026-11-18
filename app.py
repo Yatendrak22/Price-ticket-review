@@ -54,6 +54,7 @@ def parse_master_data(excel_files, word_files):
     """
     price_db = []
     excel_names = []
+    all_raw_numbers = set()
 
     for excel_path in excel_files:
         if not excel_path or not os.path.exists(excel_path) or os.path.getsize(excel_path) == 0:
@@ -65,23 +66,36 @@ def parse_master_data(excel_files, word_files):
                 ws = wb[sheetname]
                 if ws.max_row < 2:
                     continue
+
+                # 1. Harvest every single numeric scalar from this entire sheet as a blanket whitelist
+                for r in ws.iter_rows(min_row=2, values_only=True):
+                    for cell in r:
+                        if isinstance(cell, (int, float)):
+                            all_raw_numbers.add(int(round(cell)))
+                        elif isinstance(cell, str):
+                            num = extract_numeric(cell)
+                            if num:
+                                all_raw_numbers.add(num)
+
                 first_row = [cell.value for cell in ws[1] if cell.value is not None]
                 headers = {normalize(val).lower(): idx for idx, val in enumerate(first_row)}
                 
-                def find_idx(keywords):
-                    for h, idx in headers.items():
-                        for kw in keywords:
+                def find_idx(keywords, avoid_keywords=None):
+                    for kw in keywords:
+                        for h, idx in headers.items():
                             if kw in h:
+                                if avoid_keywords and any(avoid in h for avoid in avoid_keywords):
+                                    continue
                                 return idx
                     return None
 
                 mpn_idx = find_idx(["mpn", "part number", "sku"])
                 details_idx = find_idx(["product details", "product", "details", "description", "title"])
-                mrp_idx = find_idx(["mrp", "price", "regular price"])
-                eff_idx = find_idx(["price ticket : cashback effective price on cards", "cashback effective price", "effective price"])
-                loan_idx = find_idx(["price ticket - emi (loans 24|0 scheme)", "price ticket - emi", "price ticket - loans", "loans 24|0", "24|0 scheme", "loans", "emi", "loan"])
-                cb_non_emi = find_idx(["instant store discount/dg", "instant store discount", "cashback: icici bank credit card non emi", "non emi", "cashback"])
-                cb_emi = find_idx(["cashback: icici bank credit card emi", "emi cashback"])
+                mrp_idx = find_idx(["mrp", "price", "regular price"], avoid_keywords=["effective", "cashback", "emi", "loan"])
+                eff_idx = find_idx(["cashback effective price", "effective price on cards", "effective price"])
+                loan_idx = find_idx(["24|0", "24 | 0", "price ticket - emi", "ticket - emi", "loans 24|0", "24|0 scheme", "loans", "emi"], avoid_keywords=["cashback", "credit card", "discount"])
+                cb_non_emi = find_idx(["instant store discount/dg", "instant store discount", "cashback: icici bank credit card non emi", "non emi", "cashback"], avoid_keywords=["emi"])
+                cb_emi = find_idx(["cashback: icici bank credit card emi", "emi cashback", "cashback"])
                 scheme_idx = find_idx(["schemes", "scheme"])
 
                 for row in ws.iter_rows(min_row=2, values_only=True):
@@ -116,11 +130,13 @@ def parse_master_data(excel_files, word_files):
         except Exception as e:
             print("Notice: Excel parsing notice:", e)
 
+    # Extract terms clauses from uploaded Approved Format files
     terms_clauses = []
     for word_path in word_files:
         if not word_path or not os.path.exists(word_path) or os.path.getsize(word_path) == 0:
             continue
         
+        # 1. PDF template
         try:
             pdoc = fitz.open(word_path, filetype="pdf")
             for page in pdoc:
@@ -134,6 +150,7 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
 
+        # 2. Word document
         try:
             doc = docx.Document(word_path)
             for p in doc.paragraphs:
@@ -145,6 +162,7 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
 
+        # 3. Plain text
         try:
             with open(word_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f.read().split('\n'):
@@ -154,29 +172,40 @@ def parse_master_data(excel_files, word_files):
         except Exception:
             pass
         
-    return price_db, terms_clauses, ", ".join(excel_names)
+    return price_db, terms_clauses, ", ".join(excel_names), all_raw_numbers
 
 def check_excel_product_on_pdf(item, pdf_text_lower):
+    """
+    Determines dynamically if a product from the uploaded Excel exists on this PDF ticket.
+    Uses meaningful token intersection (model, capacity, connectivity) without hardcoding.
+    """
     det = item["details"].lower()
+
+    # Split details into meaningful tokens (excluding color finishes which share the same price)
     det_clean = re.sub(r'\s*-\s*(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white|gold|natural).*', '', det, flags=re.IGNORECASE)
     
+    # Capacity token (128GB, 256GB, etc.)
     cap_match = re.search(r'\b(\d+gb|\d+tb)\b', det_clean)
     if cap_match:
         cap = cap_match.group(1)
         if cap not in pdf_text_lower:
             return False
 
+    # Connectivity
     if "cellular" in det_clean and "cellular" not in pdf_text_lower:
         return False
 
+    # Glass type (nano-texture vs standard)
     if "nano-texture" in det_clean and "nano-texture" not in pdf_text_lower:
         return False
 
+    # Extract primary product words
     tokens = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', det_clean) if w not in ['with', 'glass', 'inch', 'generation', 'model', 'optional']]
+    
     match_count = sum(1 for t in tokens if t in pdf_text_lower)
     return len(tokens) > 0 and match_count == len(tokens)
 
-def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel_filename, session_id):
+def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel_filename, all_raw_numbers, session_id):
     safe_base = os.path.splitext(os.path.basename(original_filename))[0]
     safe_base = re.sub(r'[^a-zA-Z0-9_\- ]', '_', safe_base)
 
@@ -220,9 +249,16 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
     excel_authorized_effs = set(item["effective_num"] for item in price_db if item.get("effective_num"))
     excel_authorized_cbs = set(item["cashback_num"] for item in price_db if item.get("cashback_num"))
     excel_authorized_loans = set(item["loan_num"] for item in price_db if item.get("loan_num"))
-    all_authorized_excel_numbers = excel_authorized_mrps | excel_authorized_effs | excel_authorized_cbs | excel_authorized_loans
+    
+    # Blanket whitelist: every number in the Excel sheet is authorized
+    all_authorized_excel_numbers = (
+        excel_authorized_mrps | excel_authorized_effs | excel_authorized_cbs | excel_authorized_loans | (all_raw_numbers or set())
+    )
 
-    # 1. UNAPPROVED PRODUCT / PRICE CHECK
+    # -----------------------------------------------------------------
+    # BIDIRECTIONAL CHECK 1:
+    # IF A PRODUCT/PRICE IS DISPLAYED IN THE AGENCY PDF BUT MISSING IN EXCEL -> FAIL!
+    # -----------------------------------------------------------------
     if price_db:
         unapproved_pdf_prices = [
             p for p in pdf_numeric_prices 
@@ -235,7 +271,7 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
                     "category": "Product Authorization Check",
                     "type": f"Unapproved Offering (Price: {format_inr(unapp_price)})",
                     "found": f"{format_inr(unapp_price)} featured on agency ticket",
-                    "expected": f"Not found in currently uploaded Excel ({excel_filename})",
+                    "expected": f"Not found in currently uploaded Excel database ({excel_filename})",
                     "status": "fail"
                 })
                 for r in page.search_for(str(unapp_price)):
@@ -245,7 +281,10 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
                     note = page.add_text_annot(r.top_right, f"UNAUTHORIZED PRODUCT / PRICE: {format_inr(unapp_price)} is not approved in {excel_filename}.")
                     note.update()
 
-    # 2. MATCHED PRODUCTS PRICE VERIFICATION
+    # -----------------------------------------------------------------
+    # BIDIRECTIONAL CHECK 2:
+    # FOR PRODUCTS IN EXCEL THAT ARE ON THIS TICKET -> VERIFY PRICE MATCH
+    # -----------------------------------------------------------------
     matched_products_on_ticket = [
         item for item in price_db 
         if check_excel_product_on_pdf(item, pdf_text_lower)
@@ -529,7 +568,7 @@ def process_ticket():
             }), 200
 
         # Parse master data purely from currently uploaded files
-        price_db, terms_clauses, active_excel_name = parse_master_data(saved_excel_paths, saved_word_paths)
+        price_db, terms_clauses, active_excel_name, all_raw_numbers = parse_master_data(saved_excel_paths, saved_word_paths)
 
         results = []
         all_redlined_paths = []
@@ -547,7 +586,7 @@ def process_ticket():
             local_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{session_id}_{orig_name}")
             pf.save(local_path)
 
-            file_result = audit_single_pdf(local_path, orig_name, price_db, terms_clauses, active_excel_name, session_id)
+            file_result = audit_single_pdf(local_path, orig_name, price_db, terms_clauses, active_excel_name, all_raw_numbers, session_id)
             results.append(file_result)
 
             if "file_paths" in file_result:
