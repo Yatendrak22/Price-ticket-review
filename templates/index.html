@@ -445,7 +445,9 @@
     let pdfFilesList = [];
 
     function checkReady() {
-        btnRun.disabled = !(pdfFilesList.length > 0 || (filePdf.files && filePdf.files.length > 0));
+        const hasPdf = (pdfFilesList.length > 0 || (filePdf.files && filePdf.files.length > 0));
+        const hasExcel = (excelFilesList.length > 0 || (fileExcel.files && fileExcel.files.length > 0));
+        btnRun.disabled = !(hasPdf && hasExcel);
     }
 
     function toggleFolderMode(e) {
