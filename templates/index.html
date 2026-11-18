@@ -370,7 +370,7 @@
             <input type="file" id="file-word" accept=".docx,.doc,.pdf,.txt,.rtf,*" multiple>
             <div class="dropzone-icon">📝</div>
             <div class="dropzone-title" id="word-dz-title">Approved Format</div>
-            <div class="dropzone-desc">Drop format files (Word, PDF, or folder)</div>
+            <div class="dropzone-desc" id="word-dz-desc">Drop format files (Word, PDF, or folder)</div>
             <span class="toggle-folder-btn" onclick="toggleWordFolderMode(event)" id="word-folder-toggle">Switch to Entire Folder Upload</span>
             <div class="file-selected" id="name-word" style="display:none;"></div>
         </div>
@@ -427,6 +427,25 @@
                 </thead>
                 <tbody id="files-table-body"></tbody>
             </table>
+        </div>
+
+        <!-- Detailed Discrepancy Breakdown Table -->
+        <div id="detailed-findings-section" style="margin-top: 32px; display: none;">
+            <h3 style="font-size: 18px; margin-bottom: 12px;">Detailed Inspection Log (Line-by-Line Breakdown)</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Inspected Item / Parameter</th>
+                            <th>Found in PDF</th>
+                            <th>Expected Value</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailed-findings-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -633,12 +652,14 @@
                 return;
             }
 
+            // Show Results
             document.getElementById('results-panel').style.display = 'block';
             document.getElementById('stat-total').textContent = data.batch_summary.total_files;
             document.getElementById('stat-approved').textContent = data.batch_summary.approved_files;
             document.getElementById('stat-rejected').textContent = data.batch_summary.rejected_files;
             document.getElementById('dl-zip').href = data.batch_summary.zip_download;
 
+            // Render Table
             const tbody = document.getElementById('files-table-body');
             tbody.innerHTML = '';
 
@@ -656,6 +677,30 @@
                 `;
                 tbody.appendChild(tr);
             });
+
+            // Populate and render detailed inspection log
+            const detailedSection = document.getElementById('detailed-findings-section');
+            const detailedTbody = document.getElementById('detailed-findings-body');
+            detailedTbody.innerHTML = '';
+            
+            const allFindings = data.findings || [];
+            if (allFindings.length > 0) {
+                detailedSection.style.display = 'block';
+                allFindings.forEach(item => {
+                    const row = document.createElement('tr');
+                    const isItemFail = item.status === 'fail';
+                    row.innerHTML = `
+                        <td><strong>${item.category}</strong></td>
+                        <td>${item.type}</td>
+                        <td><span style="${isItemFail ? 'color: var(--error); font-weight:600;' : ''}">${item.found}</span></td>
+                        <td><span style="color: var(--success); font-weight:600;">${item.expected}</span></td>
+                        <td><span class="badge-status ${isItemFail ? 'badge-fail' : 'badge-pass'}">${isItemFail ? 'FAIL' : 'PASS'}</span></td>
+                    `;
+                    detailedTbody.appendChild(row);
+                });
+            } else {
+                detailedSection.style.display = 'none';
+            }
 
             document.getElementById('results-panel').scrollIntoView({ behavior: 'smooth' });
 
