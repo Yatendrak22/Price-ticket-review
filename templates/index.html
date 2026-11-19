@@ -365,22 +365,22 @@
             <div class="file-selected" id="name-excel" style="display:none;"></div>
         </div>
 
-        <!-- 2. Approved Format (Word / PDF / Folder) -->
+        <!-- 2. Approved Format (Files or Folder) -->
         <div class="dropzone" id="dz-word">
             <input type="file" id="file-word" accept=".docx,.doc,.pdf,.txt,.rtf,*" multiple>
             <div class="dropzone-icon">📝</div>
-            <div class="dropzone-title" id="word-dz-title">Approved Format</div>
-            <div class="dropzone-desc" id="word-dz-desc">Drop format files (Word, PDF, or folder)</div>
+            <div class="dropzone-title" id="word-dz-title">Approved Format (Files or Folder)</div>
+            <div class="dropzone-desc" id="word-dz-desc">Drop format files or select multiple</div>
             <span class="toggle-folder-btn" onclick="toggleWordFolderMode(event)" id="word-folder-toggle">Switch to Entire Folder Upload</span>
             <div class="file-selected" id="name-word" style="display:none;"></div>
         </div>
 
-        <!-- 3. Agency PDF Tickets (Files OR Folder) -->
+        <!-- 3. Agency PDF Tickets (Files or Folder) -->
         <div class="dropzone" id="dz-pdf">
             <input type="file" id="file-pdf" accept=".pdf,*" multiple>
             <div class="dropzone-icon">📁</div>
             <div class="dropzone-title" id="pdf-dz-title">Agency PDFs (Files or Folder)</div>
-            <div class="dropzone-desc" id="pdf-dz-desc">Drop agency PDFs or folders here</div>
+            <div class="dropzone-desc" id="pdf-dz-desc">Drop agency PDFs or select multiple</div>
             <span class="toggle-folder-btn" onclick="toggleFolderMode(event)" id="folder-toggle">Switch to Entire Folder Upload</span>
             <div class="file-selected" id="name-pdf" style="display:none;"></div>
         </div>
@@ -482,7 +482,7 @@
             filePdf.removeAttribute('webkitdirectory');
             filePdf.removeAttribute('directory');
             document.getElementById('pdf-dz-title').textContent = "Agency PDFs (Files or Folder)";
-            document.getElementById('pdf-dz-desc').textContent = "Drop agency PDFs or folders here";
+            document.getElementById('pdf-dz-desc').textContent = "Drop agency PDFs or select multiple";
             document.getElementById('folder-toggle').textContent = "Switch to Entire Folder Upload";
         }
         filePdf.value = '';
@@ -503,8 +503,8 @@
         } else {
             fileWord.removeAttribute('webkitdirectory');
             fileWord.removeAttribute('directory');
-            document.getElementById('word-dz-title').textContent = "Approved Format";
-            document.getElementById('word-dz-desc').textContent = "Drop format files (Word, PDF, or folder)";
+            document.getElementById('word-dz-title').textContent = "Approved Format (Files or Folder)";
+            document.getElementById('word-dz-desc').textContent = "Drop format files or select multiple";
             document.getElementById('word-folder-toggle').textContent = "Switch to Entire Folder Upload";
         }
         fileWord.value = '';
@@ -574,9 +574,11 @@
                 fileArrayRef.length = 0;
                 fileArrayRef.push(...collectedFiles);
                 labelElement.style.display = 'inline-block';
-                labelElement.textContent = collectedFiles.length === 1 
-                    ? collectedFiles[0].name 
-                    : `${collectedFiles.length} file(s) loaded`;
+                if (collectedFiles.length === 1) {
+                    labelElement.textContent = `1 file loaded: ${collectedFiles[0].name}`;
+                } else {
+                    labelElement.textContent = `📁 ${collectedFiles.length} file(s) loaded (incl. ${collectedFiles[0].name})`;
+                }
                 if (onUpdated) onUpdated();
             }
         });
@@ -586,36 +588,38 @@
     setupDropzone(document.getElementById('dz-word'), wordFilesList, document.getElementById('name-word'), checkReady);
     setupDropzone(document.getElementById('dz-pdf'), pdfFilesList, document.getElementById('name-pdf'), checkReady);
 
+    // Update file badge label with both name and count
+    function updateFileLabel(elementId, files, defaultSinglePrefix) {
+        const el = document.getElementById(elementId);
+        if (!files || files.length === 0) {
+            el.style.display = 'none';
+            el.textContent = '';
+            return;
+        }
+        el.style.display = 'inline-block';
+        if (files.length === 1) {
+            el.textContent = `1 file loaded: ${files[0].name}`;
+        } else {
+            el.textContent = `📁 ${files.length} file(s) loaded (incl. ${files[0].name})`;
+        }
+    }
+
+    // Standard file dialog changes
     fileExcel.addEventListener('change', (e) => {
         excelFilesList = Array.from(e.target.files);
-        const count = excelFilesList.length;
-        const el = document.getElementById('name-excel');
-        if (count > 0) {
-            el.style.display = 'inline-block';
-            el.textContent = count === 1 ? excelFilesList[0].name : `${count} Excel file(s) selected`;
-        }
+        updateFileLabel('name-excel', excelFilesList, 'Excel');
         checkReady();
     });
 
     fileWord.addEventListener('change', (e) => {
         wordFilesList = Array.from(e.target.files);
-        const count = wordFilesList.length;
-        const el = document.getElementById('name-word');
-        if (count > 0) {
-            el.style.display = 'inline-block';
-            el.textContent = count === 1 ? wordFilesList[0].name : `${count} Approved Format file(s) selected`;
-        }
+        updateFileLabel('name-word', wordFilesList, 'Approved Format');
         checkReady();
     });
 
     filePdf.addEventListener('change', (e) => {
         pdfFilesList = Array.from(e.target.files);
-        const count = pdfFilesList.length;
-        const el = document.getElementById('name-pdf');
-        if (count > 0) {
-            el.style.display = 'inline-block';
-            el.textContent = count === 1 ? pdfFilesList[0].name : `${count} PDF file(s) selected`;
-        }
+        updateFileLabel('name-pdf', pdfFilesList, 'PDF');
         checkReady();
     });
 
@@ -625,17 +629,20 @@
 
         const formData = new FormData();
 
-        const pdfsToSend = pdfFilesList.length > 0 ? pdfFilesList : Array.from(filePdf.files);
+        // 1. Gather all PDFs
+        const pdfsToSend = pdfFilesList.length > 0 ? pdfFilesList : Array.from(filePdf.files || []);
         for (let i = 0; i < pdfsToSend.length; i++) {
             formData.append('pdf', pdfsToSend[i]);
         }
 
-        const excelsToSend = excelFilesList.length > 0 ? excelFilesList : Array.from(fileExcel.files);
+        // 2. Gather all Excel files
+        const excelsToSend = excelFilesList.length > 0 ? excelFilesList : Array.from(fileExcel.files || []);
         for (let i = 0; i < excelsToSend.length; i++) {
             formData.append('excel', excelsToSend[i]);
         }
 
-        const wordsToSend = wordFilesList.length > 0 ? wordFilesList : Array.from(fileWord.files);
+        // 3. Gather all Approved Format files
+        const wordsToSend = wordFilesList.length > 0 ? wordFilesList : Array.from(fileWord.files || []);
         for (let i = 0; i < wordsToSend.length; i++) {
             formData.append('word', wordsToSend[i]);
         }
@@ -646,6 +653,12 @@
                 body: formData
             });
 
+            if (!resp.ok) {
+                const errText = await resp.text();
+                alert("Server error: " + errText.substring(0, 300));
+                return;
+            }
+
             const data = await resp.json();
             if (!data.success) {
                 alert("Audit notice: " + (data.error || "Batch processing failed."));
@@ -654,16 +667,19 @@
 
             // Show Results
             document.getElementById('results-panel').style.display = 'block';
-            document.getElementById('stat-total').textContent = data.batch_summary.total_files;
-            document.getElementById('stat-approved').textContent = data.batch_summary.approved_files;
-            document.getElementById('stat-rejected').textContent = data.batch_summary.rejected_files;
-            document.getElementById('dl-zip').href = data.batch_summary.zip_download;
+            document.getElementById('stat-total').textContent = data.batch_summary ? data.batch_summary.total_files : 1;
+            document.getElementById('stat-approved').textContent = data.batch_summary ? data.batch_summary.approved_files : 0;
+            document.getElementById('stat-rejected').textContent = data.batch_summary ? data.batch_summary.rejected_files : 1;
+            if (data.batch_summary && data.batch_summary.zip_download) {
+                document.getElementById('dl-zip').href = data.batch_summary.zip_download;
+            }
 
             // Render Table
             const tbody = document.getElementById('files-table-body');
             tbody.innerHTML = '';
 
-            data.files.forEach(f => {
+            const filesList = data.files || [];
+            filesList.forEach(f => {
                 const tr = document.createElement('tr');
                 const isFail = f.status === 'REJECTED';
                 tr.innerHTML = `
@@ -671,8 +687,8 @@
                     <td><span class="badge-status ${isFail ? 'badge-fail' : 'badge-pass'}">${f.status}</span></td>
                     <td><span style="color: ${isFail ? 'var(--error)' : 'var(--success)'}; font-weight:600;">${f.failed} Error(s)</span></td>
                     <td>
-                        <a href="${f.downloads.corrected}" class="btn-action-small feat">⬇️ Corrected PDF</a>
-                        <a href="${f.downloads.redlined}" class="btn-action-small">🔍 Redlined PDF</a>
+                        <a href="${f.downloads ? f.downloads.corrected : '#'}" class="btn-action-small feat">⬇️ Corrected PDF</a>
+                        <a href="${f.downloads ? f.downloads.redlined : '#'}" class="btn-action-small">🔍 Redlined PDF</a>
                     </td>
                 `;
                 tbody.appendChild(tr);
