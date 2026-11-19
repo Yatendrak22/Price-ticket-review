@@ -101,6 +101,13 @@
             transform: translateY(-2px);
         }
 
+        .dropzone.active-border {
+            border-color: #2563EB;
+            border-style: dashed;
+            background: #F0F7FF;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+        }
+
         .dropzone input[type="file"] {
             position: absolute;
             top: 0;
@@ -109,7 +116,7 @@
             height: 100%;
             opacity: 0;
             cursor: pointer;
-            z-index: 5;
+            z-index: 1;
         }
 
         .dropzone-icon {
@@ -392,6 +399,7 @@
         </button>
     </div>
 
+    <!-- Results Container -->
     <div class="results-container" id="results-panel">
         <div class="scorecard">
             <div class="stat-card">
@@ -408,12 +416,14 @@
             </div>
         </div>
 
+        <!-- Master ZIP Download -->
         <div class="downloads-banner">
             <a href="#" class="btn-download" id="dl-zip">
                 📦 Download All as ZIP (Redlined + Corrected PDFs)
             </a>
         </div>
 
+        <!-- Per-File Table -->
         <h3 style="font-size: 18px; margin-bottom: 12px;">Processed Files & Action Items</h3>
         <div class="table-wrapper">
             <table>
@@ -459,6 +469,7 @@
     let isPdfFolderMode = false;
     let isWordFolderMode = false;
 
+    // In-memory file storage supporting both drop and browse
     let excelFilesList = [];
     let wordFilesList = [];
     let pdfFilesList = [];
@@ -512,6 +523,7 @@
         document.getElementById('name-word').style.display = 'none';
     }
 
+    // Helper to recursively traverse directories in HTML5 Drag & Drop
     async function traverseEntry(entry) {
         const files = [];
         if (entry.isFile) {
@@ -530,7 +542,8 @@
         return files;
     }
 
-    function setupDropzone(dzElement, fileArrayRef, labelElement, onUpdated) {
+    // Setup native Drag & Drop for a dropzone
+    function setupDropzone(dzElement, fileArrayRef, labelElementId, onUpdated) {
         ['dragenter', 'dragover'].forEach(eventName => {
             dzElement.addEventListener(eventName, (e) => {
                 e.preventDefault();
@@ -548,6 +561,9 @@
         });
 
         dzElement.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
             const items = e.dataTransfer.items;
             const collectedFiles = [];
 
@@ -561,10 +577,11 @@
                             collectedFiles.push(...files);
                         }
                     } else if (item.kind === 'file') {
-                        collectedFiles.push(item.getAsFile());
+                        const f = item.getAsFile();
+                        if (f) collectedFiles.push(f);
                     }
                 }
-            } else if (e.dataTransfer.files) {
+            } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 for (let i = 0; i < e.dataTransfer.files.length; i++) {
                     collectedFiles.push(e.dataTransfer.files[i]);
                 }
@@ -573,23 +590,18 @@
             if (collectedFiles.length > 0) {
                 fileArrayRef.length = 0;
                 fileArrayRef.push(...collectedFiles);
-                labelElement.style.display = 'inline-block';
-                if (collectedFiles.length === 1) {
-                    labelElement.textContent = `1 file loaded: ${collectedFiles[0].name}`;
-                } else {
-                    labelElement.textContent = `📁 ${collectedFiles.length} file(s) loaded (incl. ${collectedFiles[0].name})`;
-                }
+                updateFileLabel(labelElementId, fileArrayRef);
                 if (onUpdated) onUpdated();
             }
         });
     }
 
-    setupDropzone(document.getElementById('dz-excel'), excelFilesList, document.getElementById('name-excel'), checkReady);
-    setupDropzone(document.getElementById('dz-word'), wordFilesList, document.getElementById('name-word'), checkReady);
-    setupDropzone(document.getElementById('dz-pdf'), pdfFilesList, document.getElementById('name-pdf'), checkReady);
+    setupDropzone(document.getElementById('dz-excel'), excelFilesList, 'name-excel', checkReady);
+    setupDropzone(document.getElementById('dz-word'), wordFilesList, 'name-word', checkReady);
+    setupDropzone(document.getElementById('dz-pdf'), pdfFilesList, 'name-pdf', checkReady);
 
     // Update file badge label with both name and count
-    function updateFileLabel(elementId, files, defaultSinglePrefix) {
+    function updateFileLabel(elementId, files) {
         const el = document.getElementById(elementId);
         if (!files || files.length === 0) {
             el.style.display = 'none';
@@ -607,19 +619,19 @@
     // Standard file dialog changes
     fileExcel.addEventListener('change', (e) => {
         excelFilesList = Array.from(e.target.files);
-        updateFileLabel('name-excel', excelFilesList, 'Excel');
+        updateFileLabel('name-excel', excelFilesList);
         checkReady();
     });
 
     fileWord.addEventListener('change', (e) => {
         wordFilesList = Array.from(e.target.files);
-        updateFileLabel('name-word', wordFilesList, 'Approved Format');
+        updateFileLabel('name-word', wordFilesList);
         checkReady();
     });
 
     filePdf.addEventListener('change', (e) => {
         pdfFilesList = Array.from(e.target.files);
-        updateFileLabel('name-pdf', pdfFilesList, 'PDF');
+        updateFileLabel('name-pdf', pdfFilesList);
         checkReady();
     });
 
