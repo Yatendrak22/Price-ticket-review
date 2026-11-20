@@ -110,7 +110,10 @@ def parse_master_data(excel_files, word_files):
 
                     if num_mrp and raw_details:
                         eff_val = extract_numeric(get_val(eff_idx))
-                        loan_val = extract_numeric(get_val(loan_idx))
+                        
+                        raw_loan = extract_numeric(get_val(loan_idx))
+                        # Only accept realistic installment amounts (above 100) to ignore tenor labels like 21 or 24
+                        loan_val = raw_loan if (raw_loan and raw_loan >= 100) else None
                         
                         cb_val = extract_numeric(get_val(cb_non_emi))
                         if not cb_val:
@@ -182,7 +185,7 @@ def check_excel_product_on_pdf(item, pdf_text_lower):
     det = item["details"].lower()
 
     # Split details into meaningful tokens (excluding color finishes which share the same price)
-    det_clean = re.sub(r'\s*-\s*(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white|gold|natural).*', '', det, flags=re.IGNORECASE)
+    det_clean = re.sub(r'[\s\-]+(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white|gold|natural|teal|ultramarine).*', '', det, flags=re.IGNORECASE)
     
     # Capacity token (128GB, 256GB, etc.)
     cap_match = re.search(r'\b(\d+gb|\d+tb)\b', det_clean)
@@ -200,7 +203,7 @@ def check_excel_product_on_pdf(item, pdf_text_lower):
         return False
 
     # Extract primary product words
-    tokens = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', det_clean) if w not in ['with', 'glass', 'inch', 'generation', 'model', 'optional']]
+    tokens = [w for w in re.findall(r'\b[a-zA-Z0-9]{2,}\b', det_clean) if w not in ['with', 'glass', 'inch', 'generation', 'model', 'optional']]
     
     match_count = sum(1 for t in tokens if t in pdf_text_lower)
     return len(tokens) > 0 and match_count == len(tokens)
@@ -284,6 +287,7 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
     # -----------------------------------------------------------------
     # BIDIRECTIONAL CHECK 2:
     # FOR PRODUCTS IN EXCEL THAT ARE ON THIS TICKET -> VERIFY PRICE MATCH
+    # Accepts either the standard MRP or the Net Effective Price on Cards
     # -----------------------------------------------------------------
     matched_products_on_ticket = [
         item for item in price_db 
@@ -292,20 +296,30 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
 
     seen_items = set()
     for item in matched_products_on_ticket:
-        clean_title = re.sub(r'\s*-\s*(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white).*', '', item["details"], flags=re.IGNORECASE).strip()
+        clean_title = re.sub(r'[\s\-]+(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white|gold|natural|teal|ultramarine).*', '', item["details"], flags=re.IGNORECASE).strip()
         key = (clean_title.lower(), item["mrp_num"])
         if key in seen_items:
             continue
         seen_items.add(key)
 
         exp_mrp = item["mrp_num"]
-        price_matched = (exp_mrp in pdf_numeric_prices)
+        exp_eff = item.get("effective_num")
+        # Price matches if either MRP or Net Effective Price is present in the PDF
+        price_matched = (exp_mrp in pdf_numeric_prices) or (exp_eff and exp_eff in pdf_numeric_prices)
+        
+        display_expected = format_inr(exp_mrp)
+        found_display = "Price Mismatch / Not Found in PDF"
+        if exp_mrp in pdf_numeric_prices:
+            found_display = format_inr(exp_mrp)
+        elif exp_eff and exp_eff in pdf_numeric_prices:
+            found_display = format_inr(exp_eff)
+            display_expected = f"{format_inr(exp_eff)} (Net Effective on Card)"
 
         audit_findings.append({
             "category": "Product Price Verification",
             "type": clean_title,
-            "found": format_inr(exp_mrp) if price_matched else "Price Mismatch / Not Found in PDF",
-            "expected": format_inr(exp_mrp),
+            "found": found_display,
+            "expected": display_expected,
             "status": "pass" if price_matched else "fail"
         })
 
@@ -317,6 +331,7 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
                 note = page.add_text_annot(r.top_right, f"PRICE ERROR: Expected MRP {format_inr(exp_mrp)} from {excel_filename}")
                 note.update()
 
+    # Check for unpopulated template placeholders
     placeholders = page.search_for("₹000.00") + page.search_for("₹000")
     if placeholders:
         for r in placeholders:
@@ -355,7 +370,7 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
 
         lowest_model_item = min(hardware_items_on_ticket, key=lambda x: x["computed_effective"])
         exp_starting_price = lowest_model_item["computed_effective"]
-        lowest_model_name = re.sub(r'\s*-\s*(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white).*', '', lowest_model_item["details"], flags=re.IGNORECASE).strip()
+        lowest_model_name = re.sub(r'[\s\-]+(silver|blue|pink|yellow|midnight|starlight|space grey|space black|black|white|gold|natural|teal|ultramarine).*', '', lowest_model_item["details"], flags=re.IGNORECASE).strip()
 
     # C) Starting effective price check (Top Right Header)
     starting_match = re.search(r'starting\s*₹?\s*(\d[\d,]*)\*?', normalized_full_text, re.IGNORECASE)
@@ -385,7 +400,8 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
     emi_match = re.search(r'or\s*₹?\s*(\d[\d,]*)\*?\*?\s*p\.m\.', normalized_full_text, re.IGNORECASE)
     if emi_match and hardware_items_on_ticket:
         pdf_emi = extract_numeric(emi_match.group(1))
-        loan_items = [it["loan_num"] for it in hardware_items_on_ticket if it.get("loan_num")]
+        # Lowest realistic EMI (above 100) among hardware items on this ticket
+        loan_items = [it["loan_num"] for it in hardware_items_on_ticket if (it.get("loan_num") and it["loan_num"] >= 100)]
         if loan_items:
             exp_emi = min(loan_items)
             emi_matched = (pdf_emi == exp_emi)
@@ -406,39 +422,26 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
 
     # E) T&C Cashback sentences verification
     cb_sentence_match = re.search(r'instant\s+cashback\s+of\s+₹?\s*(\d[\d,]*)\s*(?:&|and)\s*₹?\s*(\d[\d,]*)\s*is\s+available\s+on\s*([^\.]+)', normalized_full_text, re.IGNORECASE)
-    if cb_sentence_match:
+    if cb_sentence_match and len(matched_products_on_ticket) > 0:
         pdf_cb_first = extract_numeric(cb_sentence_match.group(1))
         pdf_cb_second = extract_numeric(cb_sentence_match.group(2))
+        mentioned_models_clause = cb_sentence_match.group(3).lower()
 
-        first_model_items = [it for it in matched_products_on_ticket if "mini" not in it["details"].lower() and it.get("cashback_num")]
-        if first_model_items:
-            expected_cb_first = first_model_items[0]["cashback_num"]
-            first_matched = (pdf_cb_first == expected_cb_first)
+        # Check all unique hardware models on this ticket and match each with its corresponding cashback
+        unique_models = {}
+        for it in hardware_items_on_ticket:
+            family = it["details"].split()[0] + " " + it["details"].split()[1] if len(it["details"].split()) > 1 else it["details"]
+            if family not in unique_models and it.get("cashback_num"):
+                unique_models[family] = it["cashback_num"]
+
+        for model_name, approved_cb in unique_models.items():
+            model_matched = (approved_cb == pdf_cb_first) or (approved_cb == pdf_cb_second)
             audit_findings.append({
                 "category": "Affordability / Offers",
-                "type": "First Device Cashback in T&C",
-                "found": f"{format_inr(pdf_cb_first)} Cashback",
-                "expected": f"{format_inr(expected_cb_first)} Cashback (from {excel_filename})",
-                "status": "pass" if first_matched else "fail"
-            })
-            if not first_matched:
-                for r in page.search_for(cb_sentence_match.group(0)[:40]):
-                    annot = page.add_highlight_annot(r)
-                    annot.set_colors(stroke=(1, 0, 0))
-                    annot.update()
-                    note = page.add_text_annot(r.top_right, f"T&C CASHBACK ERROR: PDF stated {format_inr(pdf_cb_first)}, expected {format_inr(expected_cb_first)} as per {excel_filename}.")
-                    note.update()
-
-        second_model_items = [it for it in matched_products_on_ticket if "mini" in it["details"].lower() and it.get("cashback_num")]
-        if second_model_items:
-            expected_cb_second = second_model_items[0]["cashback_num"]
-            second_matched = (pdf_cb_second == expected_cb_second)
-            audit_findings.append({
-                "category": "Affordability / Offers",
-                "type": "Second Device Cashback in T&C",
-                "found": f"{format_inr(pdf_cb_second)} Cashback",
-                "expected": f"{format_inr(expected_cb_second)} Cashback (from {excel_filename})",
-                "status": "pass" if second_matched else "fail"
+                "type": f"{model_name} Cashback in T&C",
+                "found": f"{format_inr(approved_cb)} Cashback Verified" if model_matched else f"Cashback Mismatch in T&C",
+                "expected": f"{format_inr(approved_cb)} Cashback (from {excel_filename})",
+                "status": "pass" if model_matched else "fail"
             })
 
     # 4. TERMS & CONDITIONS
