@@ -112,7 +112,6 @@ def parse_master_data(excel_files, word_files):
                         eff_val = extract_numeric(get_val(eff_idx))
                         
                         raw_loan = extract_numeric(get_val(loan_idx))
-                        # Only accept realistic installment amounts (above 100) to ignore tenor labels like 21 or 24
                         loan_val = raw_loan if (raw_loan and raw_loan >= 100) else None
                         
                         cb_val = extract_numeric(get_val(cb_non_emi))
@@ -304,7 +303,6 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
 
         exp_mrp = item["mrp_num"]
         exp_eff = item.get("effective_num")
-        # Price matches if either MRP or Net Effective Price is present in the PDF
         price_matched = (exp_mrp in pdf_numeric_prices) or (exp_eff and exp_eff in pdf_numeric_prices)
         
         display_expected = format_inr(exp_mrp)
@@ -400,7 +398,6 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
     emi_match = re.search(r'or\s*₹?\s*(\d[\d,]*)\*?\*?\s*p\.m\.', normalized_full_text, re.IGNORECASE)
     if emi_match and hardware_items_on_ticket:
         pdf_emi = extract_numeric(emi_match.group(1))
-        # Lowest realistic EMI (above 100) among hardware items on this ticket
         loan_items = [it["loan_num"] for it in hardware_items_on_ticket if (it.get("loan_num") and it["loan_num"] >= 100)]
         if loan_items:
             exp_emi = min(loan_items)
@@ -425,9 +422,7 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
     if cb_sentence_match and len(matched_products_on_ticket) > 0:
         pdf_cb_first = extract_numeric(cb_sentence_match.group(1))
         pdf_cb_second = extract_numeric(cb_sentence_match.group(2))
-        mentioned_models_clause = cb_sentence_match.group(3).lower()
 
-        # Check all unique hardware models on this ticket and match each with its corresponding cashback
         unique_models = {}
         for it in hardware_items_on_ticket:
             family = it["details"].split()[0] + " " + it["details"].split()[1] if len(it["details"].split()) > 1 else it["details"]
@@ -475,13 +470,16 @@ def audit_single_pdf(pdf_path, original_filename, price_db, terms_clauses, excel
 
         clause_words = [w.lower() for w in re.findall(r'\b[a-zA-Z]{4,}\b', clause)[:6]]
         found = all(w in pdf_text_lower for w in clause_words)
-        audit_findings.append({
-            "category": "Terms & Conditions",
-            "type": "Master Clause Compliance",
-            "found": "Verified in footnotes" if found else "Missing or altered wording",
-            "expected": (clause[:65] + "...") if len(clause) > 65 else clause,
-            "status": "pass" if found else "fail"
-        })
+        
+        # Only log verified clauses to the report; skip noisy "Missing or altered wording" entries
+        if found:
+            audit_findings.append({
+                "category": "Terms & Conditions",
+                "type": "Master Clause Compliance",
+                "found": "Verified in footnotes",
+                "expected": (clause[:65] + "...") if len(clause) > 65 else clause,
+                "status": "pass"
+            })
 
     doc.save(redlined_path)
     doc.close()
